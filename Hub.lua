@@ -1,8 +1,10 @@
 --[[
     A TROPA DA HELLO KITTY HUB
-    Versao 1.3.6 - MOBILE + PC
+    Versao 1.4.4 - MOBILE + PC
     by EOGuizin_X
 ]]
+
+local HUB_VERSION = "1.4.4"
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -10,6 +12,7 @@ local UserInputService = game:GetService("UserInputService")
 local Lighting = game:GetService("Lighting")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local VirtualUser = game:GetService("VirtualUser")
+local HttpService = game:GetService("HttpService")
 
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
@@ -50,10 +53,10 @@ local Themes = {
         Track = Color3.fromRGB(95,95,110)
     },
     Halloween = {
-        Main = Color3.fromRGB(55,35,65),
-        Header = Color3.fromRGB(110,45,145),
-        Button = Color3.fromRGB(145,75,180),
-        Track = Color3.fromRGB(85,45,105)
+        Main = Color3.fromRGB(48,28,65),       -- roxo escuro
+        Header = Color3.fromRGB(255,135,35),   -- laranja
+        Button = Color3.fromRGB(205,105,35),   -- laranja queimado
+        Track = Color3.fromRGB(105,65,130)     -- roxo medio
     },
     Christmas = {
         Main = Color3.fromRGB(35,75,55),
@@ -145,8 +148,8 @@ local Header = Create("Frame",{
 Create("UICorner",{CornerRadius=UDim.new(0,14)},Header)
 Create("TextLabel",{
     Size=UDim2.new(1,-70,0,29), Position=UDim2.fromOffset(16,4),
-    BackgroundTransparency=1, Text="🎀 HELLO KITTY HUB",
-    TextColor3=Color3.new(1,1,1), TextSize=17, Font=Enum.Font.GothamBold,
+    BackgroundTransparency=1, Text="🎀 HELLO KITTY HUB  •  v"..HUB_VERSION,
+    TextColor3=Color3.new(1,1,1), TextSize=15, Font=Enum.Font.GothamBold,
     TextXAlignment=Enum.TextXAlignment.Left
 },Header)
 Create("TextLabel",{
@@ -210,6 +213,7 @@ local PlayerPage=CreatePage("PLAYER")
 local VisualPage=CreatePage("VISUALS")
 local FarmPage=CreatePage("FARM")
 local ConfigPage=CreatePage("CONFIG")
+local SavesPage=CreatePage("SALVOS")
 local SelectedPageName="PLAYER"
 local function SelectPage(name)
     SelectedPageName=name
@@ -220,8 +224,8 @@ local function SelectPage(name)
     end
 end
 local function CreateTab(name,label)
-    local button=Create("TextButton",{Size=UDim2.new(1,0,0,42),BackgroundColor3=Themes.Kitty.Button,
-        BackgroundTransparency=0.48,Text=label,TextColor3=Color3.new(1,1,1),TextSize=11,
+    local button=Create("TextButton",{Size=UDim2.new(1,0,0,34),BackgroundColor3=Themes.Kitty.Button,
+        BackgroundTransparency=0.48,Text=label,TextColor3=Color3.new(1,1,1),TextSize=10,
         Font=Enum.Font.GothamBold,TextXAlignment=Enum.TextXAlignment.Left},Sidebar)
     Create("UICorner",{CornerRadius=UDim.new(0,9)},button)
     Create("UIPadding",{PaddingLeft=UDim.new(0,12)},button)
@@ -231,17 +235,18 @@ end
 CreateTab("PLAYER","👤  PLAYER")
 CreateTab("VISUALS","👁  VISUALS")
 CreateTab("FARM","🪙  FARM")
+CreateTab("SALVOS","💾  SALVAR")
 CreateTab("CONFIG","⚙  CONFIG")
 SelectPage("PLAYER")
 
 -- BOTOES
 local function AddButton(page,text,callback)
     local button = Create("TextButton",{
-        Size = UDim2.new(1,-6,0,36),
-        BackgroundColor3 = Themes.Kitty.Button,
+        Size = UDim2.new(1,-6,0,30),
+        BackgroundColor3 = Themes[CurrentTheme].Button,
         Text = text,
         TextColor3 = Color3.new(1,1,1),
-        TextSize = 13,
+        TextSize = 11,
         Font = Enum.Font.GothamBold
     },page)
 
@@ -255,27 +260,27 @@ end
 local function AddToggle(page,title,setting,callback)
     local row = Create("Frame",{
         Name = "ToggleContainer",
-        Size = UDim2.new(1,-6,0,42),
+        Size = UDim2.new(1,-6,0,34),
         BackgroundColor3 = Themes.Kitty.Button,
         BorderSizePixel = 0
     },page)
     Create("UICorner",{CornerRadius=UDim.new(0,7)},row)
 
     local label = Create("TextLabel",{
-        Size = UDim2.new(1,-68,1,0),
+        Size = UDim2.new(1,-60,1,0),
         Position = UDim2.fromOffset(10,0),
         BackgroundTransparency = 1,
         Text = title,
         TextColor3 = Color3.new(1,1,1),
-        TextSize = 12,
+        TextSize = 11,
         Font = Enum.Font.GothamBold,
         TextXAlignment = Enum.TextXAlignment.Left
     },row)
 
     local track = Create("Frame",{
         Name = "ToggleTrack",
-        Size = UDim2.fromOffset(42,22),
-        Position = UDim2.new(1,-52,0.5,-11),
+        Size = UDim2.fromOffset(36,20),
+        Position = UDim2.new(1,-46,0.5,-10),
         BackgroundColor3 = Themes.Kitty.Track,
         BorderSizePixel = 0
     },row)
@@ -283,7 +288,7 @@ local function AddToggle(page,title,setting,callback)
 
     local knob = Create("Frame",{
         Name = "ToggleKnob",
-        Size = UDim2.fromOffset(16,16),
+        Size = UDim2.fromOffset(14,14),
         Position = UDim2.fromOffset(3,3),
         BackgroundColor3 = Color3.new(1,1,1),
         BorderSizePixel = 0
@@ -300,7 +305,7 @@ local function AddToggle(page,title,setting,callback)
 
     local function updateVisual(enabled)
         track.BackgroundColor3 = enabled and Themes[CurrentTheme].Header or Themes[CurrentTheme].Track
-        knob.Position = enabled and UDim2.new(1,-19,0,3) or UDim2.fromOffset(3,3)
+        knob.Position = enabled and UDim2.new(1,-17,0,3) or UDim2.fromOffset(3,3)
     end
 
     hitbox.MouseButton1Click:Connect(function()
@@ -310,7 +315,7 @@ local function AddToggle(page,title,setting,callback)
     end)
 
     ToggleButtons[setting] = {
-        Row = row, Track = track, Knob = knob, Update = updateVisual, Title = title
+        Row = row, Track = track, Knob = knob, Update = updateVisual, Title = title, Callback = callback
     }
     updateVisual(Settings[setting] == true)
     return row
@@ -427,7 +432,9 @@ local function AddSlider(page,title,setting,minimum,maximum,step)
         Frame = frame,
         Bar = bar,
         Fill = fill,
-        Knob = knob
+        Knob = knob,
+        Setting = setting,
+        Set = Update, Minimum = minimum, Maximum = maximum, Step = step
     })
 
     Update(Settings[setting])
@@ -445,9 +452,6 @@ local function ApplyMovement()
     end
 end
 
-AddSlider(PlayerPage,"WalkSpeed","WalkSpeed",16,200,1)
-AddSlider(PlayerPage,"JumpPower","JumpPower",50,200,1)
-AddSlider(PlayerPage,"Fly Speed","FlySpeed",10,150,1)
 
 -- NOCLIP
 local function RestoreCollision()
@@ -1103,13 +1107,13 @@ Create("UICorner",{CornerRadius=UDim.new(1,0)},BagFill)
 
 AddSlider(FarmPage,"Velocidade do Farm","FarmSpeed",5,28,1)
 
-AddToggle(FarmPage,"Evitar assassino","AvoidMurderer",function(enabled)
+local AvoidToggle = AddToggle(FarmPage,"Evitar assassino","AvoidMurderer",function(enabled)
     FarmStatus.Text = enabled and
         "Status: procurando moedas seguras" or
         "Status: farm ativo"
 end)
 
-AddToggle(FarmPage,"Resetar com bolsa cheia","ResetWhenFull",function(enabled)
+local ResetFullToggle = AddToggle(FarmPage,"Resetar com bolsa cheia","ResetWhenFull",function(enabled)
     FarmStatus.Text = enabled and
         "Status: reset automático ligado" or
         "Status: reset automático desligado"
@@ -1676,21 +1680,7 @@ local function SetAutoFarm(enabled)
     end
 end
 
-AddToggle(FarmPage,"Auto Farm","AutoFarm",SetAutoFarm)
-
-AddButton(FarmPage,"Velocidade padrão: 22",function()
-    Settings.FarmSpeed = 22
-
-    for _,slider in ipairs(SliderObjects) do
-        if slider.Frame and slider.Frame.Parent then
-            local label = slider.Frame:FindFirstChildOfClass("TextLabel")
-
-            if label and label.Text:find("Velocidade do Farm") then
-                label.Text = "Velocidade do Farm: 22"
-            end
-        end
-    end
-end)
+local AutoFarmToggle = AddToggle(FarmPage,"Auto Farm","AutoFarm",SetAutoFarm)
 
 -- MONITORAR PARTICIPACAO NA RODADA
 task.spawn(function()
@@ -1796,8 +1786,11 @@ local function ApplyTheme(name)
     end
 
     for _,page in pairs(Pages) do
-        for _,object in ipairs(page:GetChildren()) do
+        -- Percorre todos os descendentes para incluir os temas dentro do seletor.
+        for _,object in ipairs(page:GetDescendants()) do
             if object:IsA("TextButton") then
+                object.BackgroundColor3 = theme.Button
+            elseif object:IsA("TextBox") then
                 object.BackgroundColor3 = theme.Button
             elseif object:IsA("Frame") and (object.Name == "SliderContainer" or object.Name == "ToggleContainer") then
                 object.BackgroundColor3 = theme.Button
@@ -1805,7 +1798,9 @@ local function ApplyTheme(name)
                     local track = object:FindFirstChild("ToggleTrack")
                     if track then
                         local settingName
-                        for key,item in pairs(ToggleButtons) do if item.Row == object then settingName=key break end end
+                        for key,item in pairs(ToggleButtons) do
+                            if item.Row == object then settingName = key break end
+                        end
                         track.BackgroundColor3 = (settingName and Settings[settingName]) and theme.Header or theme.Track
                     end
                 end
@@ -1845,23 +1840,165 @@ local function SetAntiAfk(enabled)
     end
 end
 
-AddToggle(PlayerPage, "Anti-AFK", "AntiAfk", SetAntiAfk)
+local AntiAfkToggle = AddToggle(PlayerPage, "Anti-AFK", "AntiAfk", SetAntiAfk)
 
-AddButton(ConfigPage,"Tema: Kitty",function()
-    ApplyTheme("Kitty")
-end)
+-- ORDEM DA ABA PLAYER
+local AntiFlingToggle = ToggleButtons.AntiFling.Row
+local NoclipToggle = ToggleButtons.Noclip.Row
+local FlyToggle = ToggleButtons.Fly.Row
+AntiFlingToggle.LayoutOrder = 1
+AntiAfkToggle.LayoutOrder = 2
+NoclipToggle.LayoutOrder = 3
+FlyToggle.LayoutOrder = 4
+AddSlider(PlayerPage,"Fly Speed","FlySpeed",10,150,1)
+AddSlider(PlayerPage,"WalkSpeed","WalkSpeed",16,200,1)
+AddSlider(PlayerPage,"JumpForce","JumpPower",50,200,1)
+for _, slider in ipairs(SliderObjects) do
+    if slider.Setting == "FlySpeed" then slider.Frame.LayoutOrder = 5 end
+    if slider.Setting == "WalkSpeed" then slider.Frame.LayoutOrder = 6 end
+    if slider.Setting == "JumpPower" then slider.Frame.LayoutOrder = 7 end
+end
 
-AddButton(ConfigPage,"Tema: Dark",function()
-    ApplyTheme("Dark")
+-- SELETOR DE TEMAS
+local ThemeOptions
+local ThemeSelector = AddButton(ConfigPage,"Tema: "..CurrentTheme.."  ▼",function()
+    ThemeOptions.Visible = not ThemeOptions.Visible
 end)
+ThemeSelector.LayoutOrder = 1
+ThemeOptions = Create("Frame",{
+    Name="ThemeOptions", Size=UDim2.new(1,-6,0,148), BackgroundTransparency=1,
+    Visible=false, LayoutOrder=2
+},ConfigPage)
+Create("UIListLayout",{Padding=UDim.new(0,5),SortOrder=Enum.SortOrder.LayoutOrder},ThemeOptions)
+for _, themeName in ipairs({"Kitty","Dark","Halloween","Christmas"}) do
+    local option = AddButton(ThemeOptions,themeName,function()
+        ApplyTheme(themeName)
+        ThemeSelector.Text = "Tema: "..themeName.."  ▼"
+        ThemeOptions.Visible = false
+    end)
+    option.Size = UDim2.new(1,0,0,29)
+end
 
-AddButton(ConfigPage,"Tema: Halloween",function()
-    ApplyTheme("Halloween")
-end)
+-- SISTEMA DE CONFIGURACOES SALVAS (ARQUIVOS JSON)
+local SaveFolder = "HelloKittyHub"
+local AutoLoadPath = SaveFolder.."/autoload.txt"
+local SelectedConfig = nil
+local SaveStatus, ConfigList
+local function FileSystemReady()
+    return type(makefolder)=="function" and type(isfolder)=="function" and
+        type(writefile)=="function" and type(readfile)=="function" and
+        type(isfile)=="function" and type(listfiles)=="function" and type(delfile)=="function"
+end
+local function EnsureSaveFolder()
+    if not FileSystemReady() then return false,"Seu executor nao oferece suporte completo a arquivos." end
+    local ok,err=pcall(function() if not isfolder(SaveFolder) then makefolder(SaveFolder) end end)
+    if not ok then return false,tostring(err) end
+    return true
+end
+local function CleanConfigName(name)
+    name=tostring(name or ""):gsub("^%s+",""):gsub("%s+$","")
+    name=name:gsub("[^%w%s_%-]","_"):gsub("%s+","_")
+    if name=="" then return nil end
+    return name
+end
+local function ConfigPath(name) return SaveFolder.."/"..name..".json" end
+local function SetSaveStatus(message)
+    if SaveStatus and SaveStatus.Parent then SaveStatus.Text="Status: "..message end
+end
+local function MakeSnapshot()
+    local data={Version=1,Theme=CurrentTheme,Settings={}}
+    for key,value in pairs(Settings) do
+        if type(value)=="boolean" or type(value)=="number" then data.Settings[key]=value end
+    end
+    return data
+end
+local function SaveConfig(name)
+    local ok,err=EnsureSaveFolder(); if not ok then SetSaveStatus(err); return false end
+    name=CleanConfigName(name); if not name then SetSaveStatus("Digite um nome valido."); return false end
+    local encodedOk,contents=pcall(function() return HttpService:JSONEncode(MakeSnapshot()) end)
+    if not encodedOk then SetSaveStatus("Erro ao preparar configuracao."); return false end
+    local writeOk,writeErr=pcall(writefile,ConfigPath(name),contents)
+    if not writeOk then SetSaveStatus("Falha ao salvar: "..tostring(writeErr)); return false end
+    SelectedConfig=name; SetSaveStatus("Configuracao '"..name.."' salva!"); return true
+end
+local function LoadConfig(name)
+    local ok,err=EnsureSaveFolder(); if not ok then SetSaveStatus(err); return false end
+    name=CleanConfigName(name); if not name or not isfile(ConfigPath(name)) then SetSaveStatus("Configuracao nao encontrada."); return false end
+    local readOk,contents=pcall(readfile,ConfigPath(name)); if not readOk then SetSaveStatus("Nao foi possivel ler o arquivo."); return false end
+    local decodeOk,data=pcall(function() return HttpService:JSONDecode(contents) end)
+    if not decodeOk or type(data)~="table" or type(data.Settings)~="table" then SetSaveStatus("Arquivo de configuracao invalido."); return false end
+    -- Primeiro restaura os valores numericos e a aparencia dos controles.
+    for _,slider in ipairs(SliderObjects) do
+        local value=data.Settings[slider.Setting]
+        if type(value)=="number" then slider.Set(value) end
+    end
+    -- Desliga recursos ativos antes de aplicar o estado salvo.
+    for key,item in pairs(ToggleButtons) do
+        if Settings[key]==true and item.Callback then pcall(item.Callback,false) end
+        Settings[key]=false; item.Update(false)
+    end
+    local order={"AntiFling","AntiAfk","XRay","FullBright","ESP","Fly","Noclip","AvoidMurderer","ResetWhenFull","AutoFarm"}
+    for _,key in ipairs(order) do
+        local item=ToggleButtons[key]
+        local value=data.Settings[key]
+        if item and type(value)=="boolean" then
+            Settings[key]=value; item.Update(value)
+            if item.Callback then pcall(item.Callback,value) end
+        end
+    end
+    if type(data.Theme)=="string" and Themes[data.Theme] then
+        ApplyTheme(data.Theme)
+        if ThemeSelector then ThemeSelector.Text="Tema: "..data.Theme.."  ▼" end
+    end
+    SelectedConfig=name; SetSaveStatus("'"..name.."' carregada!"); return true
+end
+local function RefreshConfigs()
+    local ok,err=EnsureSaveFolder(); if not ok then SetSaveStatus(err); return end
+    if ConfigList then for _,child in ipairs(ConfigList:GetChildren()) do if child:IsA("TextButton") then child:Destroy() end end end
+    local found={}
+    local listOk,files=pcall(listfiles,SaveFolder)
+    if listOk and type(files)=="table" then
+        for _,path in ipairs(files) do
+            local base=tostring(path):match("([^/\\]+)%.json$")
+            if base then table.insert(found,base) end
+        end
+    end
+    table.sort(found)
+    for i,name in ipairs(found) do
+        local entry=AddButton(ConfigList,name,function() SelectedConfig=name; ConfigNameBox.Text=name; SetSaveStatus("Selecionada: "..name) end)
+        entry.LayoutOrder=i; entry.Size=UDim2.new(1,-4,0,27)
+    end
+    SetSaveStatus(#found.." configuracao(oes) encontrada(s).")
+end
 
-AddButton(ConfigPage,"Tema: Christmas",function()
-    ApplyTheme("Christmas")
-end)
+local SaveTitle=Create("TextLabel",{Size=UDim2.new(1,-6,0,26),BackgroundTransparency=1,Text="CONFIGURACOES SALVAS",TextColor3=Color3.new(1,1,1),TextSize=13,Font=Enum.Font.GothamBold,TextXAlignment=Enum.TextXAlignment.Left,LayoutOrder=1},SavesPage)
+local ConfigNameBox=Create("TextBox",{Size=UDim2.new(1,-6,0,34),BackgroundColor3=Themes.Kitty.Button,TextColor3=Color3.new(1,1,1),PlaceholderText="Nome da configuracao...",PlaceholderColor3=Color3.fromRGB(235,220,230),Text="",TextSize=12,Font=Enum.Font.Gotham,ClearTextOnFocus=false,LayoutOrder=2},SavesPage)
+Create("UICorner",{CornerRadius=UDim.new(0,7)},ConfigNameBox)
+SaveStatus=Create("TextLabel",{Size=UDim2.new(1,-6,0,34),BackgroundTransparency=1,Text="Status: Pronto.",TextColor3=Color3.new(1,1,1),TextSize=10,Font=Enum.Font.Gotham,TextWrapped=true,TextXAlignment=Enum.TextXAlignment.Left,LayoutOrder=11},SavesPage)
+local SaveButton=AddButton(SavesPage,"💾  Salvar configuracao",function() SaveConfig(ConfigNameBox.Text); RefreshConfigs() end); SaveButton.LayoutOrder=3
+local LoadButton=AddButton(SavesPage,"📂  Carregar configuracao",function() LoadConfig(ConfigNameBox.Text~="" and ConfigNameBox.Text or SelectedConfig) end); LoadButton.LayoutOrder=7
+local DeleteButton=AddButton(SavesPage,"🗑  Excluir configuracao",function()
+    local ok,err=EnsureSaveFolder(); if not ok then SetSaveStatus(err); return end
+    local name=CleanConfigName(ConfigNameBox.Text~="" and ConfigNameBox.Text or SelectedConfig)
+    if not name or not isfile(ConfigPath(name)) then SetSaveStatus("Configuracao nao encontrada."); return end
+    local deleted,deleteErr=pcall(delfile,ConfigPath(name))
+    if deleted then if SelectedConfig==name then SelectedConfig=nil end; SetSaveStatus("Configuracao excluida."); RefreshConfigs() else SetSaveStatus("Falha ao excluir: "..tostring(deleteErr)) end
+end); DeleteButton.LayoutOrder=8
+local AutoLoadButton=AddButton(SavesPage,"⭐  Definir como carregamento automatico",function()
+    local ok,err=EnsureSaveFolder(); if not ok then SetSaveStatus(err); return end
+    local name=CleanConfigName(ConfigNameBox.Text~="" and ConfigNameBox.Text or SelectedConfig)
+    if not name or not isfile(ConfigPath(name)) then SetSaveStatus("Salve ou selecione uma configuracao primeiro."); return end
+    local wrote,writeErr=pcall(writefile,AutoLoadPath,name)
+    if wrote then SetSaveStatus("'"..name.."' sera carregada ao iniciar!") else SetSaveStatus("Falha no Auto Load: "..tostring(writeErr)) end
+end); AutoLoadButton.LayoutOrder=9
+local ClearAutoLoadButton=AddButton(SavesPage,"Remover carregamento automatico",function()
+    if type(isfile)=="function" and type(delfile)=="function" and isfile(AutoLoadPath) then pcall(delfile,AutoLoadPath) end
+    SetSaveStatus("Carregamento automatico removido.")
+end); ClearAutoLoadButton.LayoutOrder=10
+local RefreshButton=AddButton(SavesPage,"🔄  Atualizar lista",function() RefreshConfigs() end); RefreshButton.LayoutOrder=6
+local ListTitle=Create("TextLabel",{Size=UDim2.new(1,-6,0,23),BackgroundTransparency=1,Text="TOQUE EM UMA CONFIGURACAO PARA SELECIONAR",TextColor3=Color3.new(1,1,1),TextSize=9,Font=Enum.Font.GothamBold,TextXAlignment=Enum.TextXAlignment.Left,LayoutOrder=4},SavesPage)
+ConfigList=Create("Frame",{Size=UDim2.new(1,-6,0,4),AutomaticSize=Enum.AutomaticSize.Y,BackgroundTransparency=1,LayoutOrder=5},SavesPage)
+Create("UIListLayout",{Padding=UDim.new(0,5),SortOrder=Enum.SortOrder.LayoutOrder},ConfigList)
 
 -- DESEXECUTAR (DENTRO DE CONFIGURACOES, COM CONFIRMACAO)
 local UnloadButton
@@ -1912,6 +2049,25 @@ RunService.Heartbeat:Connect(function()
     end
 end)
 
-ApplyTheme("Kitty")
+-- ORDEM DAS ABAS FARM E CONFIGURACAO
+FarmStatus.LayoutOrder = 1
+AutoFarmToggle.LayoutOrder = 2
+for _, slider in ipairs(SliderObjects) do
+    if slider.Setting == "FarmSpeed" then slider.Frame.LayoutOrder = 3 end
+end
+AvoidToggle.LayoutOrder = 4
+ResetFullToggle.LayoutOrder = 5
+BagFrame.LayoutOrder = 6
+UnloadButton.LayoutOrder = 3
 
-print("Hello Kitty Hub v1.3.6 carregado!")
+ApplyTheme("Kitty")
+RefreshConfigs()
+-- Carrega a configuracao escolhida para iniciar automaticamente, se existir.
+task.defer(function()
+    if type(isfile)=="function" and type(readfile)=="function" and isfile(AutoLoadPath) then
+        local ok,name=pcall(readfile,AutoLoadPath)
+        if ok and type(name)=="string" then task.wait(0.5); LoadConfig(name) end
+    end
+end)
+
+print("Hello Kitty Hub v"..HUB_VERSION.." carregado!")
