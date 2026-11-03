@@ -1,6 +1,6 @@
 --[[
     A TROPA DA HELLO KITTY HUB
-    Versao 1.2.2 - MOBILE + PC
+    Versao 1.3.6 - MOBILE + PC
     by EOGuizin_X
 ]]
 
@@ -9,6 +9,7 @@ local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 local Lighting = game:GetService("Lighting")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local VirtualUser = game:GetService("VirtualUser")
 
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
@@ -18,12 +19,14 @@ local Camera = workspace.CurrentCamera
 local Settings = {
     WalkSpeed = 16,
     JumpPower = 50,
-    FlySpeed = 30,
+    FlySpeed = 20,
     FarmSpeed = 22,
     MurdererRadius = 30,
 
     Fly = false,
     Noclip = false,
+    AntiFling = false,
+    AntiAfk = false,
     ESP = false,
     XRay = false,
     FullBright = false,
@@ -115,7 +118,8 @@ if old then
     old:Destroy()
 end
 
--- GUI PRINCIPAL
+-- GUI PRINCIPAL - LAYOUT 1.3.2
+local TouchMode = UserInputService.TouchEnabled
 local ScreenGui = Create("ScreenGui",{
     Name = "HelloKittyHub",
     ResetOnSpawn = false,
@@ -124,204 +128,110 @@ local ScreenGui = Create("ScreenGui",{
 
 local Main = Create("Frame",{
     Name = "Main",
-    Size = UDim2.fromOffset(360,440),
-    Position = UDim2.new(0.5,-180,0.5,-220),
+    Size = TouchMode and UDim2.new(0.94,0,0.76,0) or UDim2.fromOffset(570,430),
+    Position = UDim2.new(0.5,0,0.5,0),
+    AnchorPoint = Vector2.new(0.5,0.5),
     BackgroundColor3 = Themes.Kitty.Main,
     BorderSizePixel = 0,
     Active = true
 },ScreenGui)
+Create("UISizeConstraint",{MinSize=Vector2.new(320,350),MaxSize=Vector2.new(570,480)},Main)
+Create("UICorner",{CornerRadius=UDim.new(0,14)},Main)
 
-Create("UICorner",{CornerRadius=UDim.new(0,12)},Main)
-
--- CABECALHO
 local Header = Create("Frame",{
-    Size = UDim2.new(1,0,0,58),
-    BackgroundColor3 = Themes.Kitty.Header,
-    BorderSizePixel = 0,
-    Active = true
+    Name = "Header", Size = UDim2.new(1,0,0,58),
+    BackgroundColor3 = Themes.Kitty.Header, BorderSizePixel = 0, Active = true
 },Main)
-
-Create("UICorner",{CornerRadius=UDim.new(0,12)},Header)
-
+Create("UICorner",{CornerRadius=UDim.new(0,14)},Header)
 Create("TextLabel",{
-    Size = UDim2.new(1,-90,0,30),
-    Position = UDim2.fromOffset(12,3),
-    BackgroundTransparency = 1,
-    Text = "🎀 A TROPA DA HELLO KITTY",
-    TextColor3 = Color3.new(1,1,1),
-    TextSize = 16,
-    Font = Enum.Font.GothamBold,
-    TextXAlignment = Enum.TextXAlignment.Left
+    Size=UDim2.new(1,-70,0,29), Position=UDim2.fromOffset(16,4),
+    BackgroundTransparency=1, Text="🎀 HELLO KITTY HUB",
+    TextColor3=Color3.new(1,1,1), TextSize=17, Font=Enum.Font.GothamBold,
+    TextXAlignment=Enum.TextXAlignment.Left
 },Header)
-
 Create("TextLabel",{
-    Size = UDim2.new(1,-90,0,17),
-    Position = UDim2.fromOffset(13,32),
-    BackgroundTransparency = 1,
-    Text = "by EOGuizin_X",
-    TextColor3 = Color3.fromRGB(255,235,245),
-    TextSize = 10,
-    Font = Enum.Font.Gotham,
-    TextXAlignment = Enum.TextXAlignment.Left
+    Size=UDim2.new(1,-70,0,16), Position=UDim2.fromOffset(17,33),
+    BackgroundTransparency=1, Text="by EOGuizin_X",
+    TextColor3=Color3.fromRGB(255,235,245), TextSize=9, Font=Enum.Font.Gotham,
+    TextXAlignment=Enum.TextXAlignment.Left
 },Header)
-
 local Minimize = Create("TextButton",{
-    Size = UDim2.fromOffset(30,28),
-    Position = UDim2.new(1,-70,0,12),
-    BackgroundColor3 = Color3.fromRGB(255,160,195),
-    Text = "-",
-    TextColor3 = Color3.new(1,1,1),
-    TextSize = 22,
-    Font = Enum.Font.GothamBold
+    Size=UDim2.fromOffset(34,30), Position=UDim2.new(1,-46,0,14),
+    BackgroundColor3=Color3.fromRGB(255,160,195), Text="—",
+    TextColor3=Color3.new(1,1,1), TextSize=20, Font=Enum.Font.GothamBold
 },Header)
+Create("UICorner",{CornerRadius=UDim.new(0,8)},Minimize)
 
-local Close = Create("TextButton",{
-    Size = UDim2.fromOffset(30,28),
-    Position = UDim2.new(1,-34,0,12),
-    BackgroundColor3 = Color3.fromRGB(220,65,100),
-    Text = "X",
-    TextColor3 = Color3.new(1,1,1),
-    TextSize = 15,
-    Font = Enum.Font.GothamBold
-},Header)
-
-Create("UICorner",{CornerRadius=UDim.new(0,7)},Minimize)
-Create("UICorner",{CornerRadius=UDim.new(0,7)},Close)
-
--- BOTAO MINIMIZADO
 local Floating = Create("TextButton",{
-    Name = "FloatingButton",
-    Size = UDim2.fromOffset(55,55),
-    Position = UDim2.new(0,20,0.5,0),
-    BackgroundColor3 = Themes.Kitty.Header,
-    Text = "🎀",
-    TextSize = 28,
-    Visible = false,
-    Active = true
+    Name="FloatingButton", Size=UDim2.fromOffset(55,55),
+    Position=UDim2.new(0,20,0.5,0), BackgroundColor3=Themes.Kitty.Header,
+    Text="🎀", TextSize=28, Visible=false, Active=true
 },ScreenGui)
-
 Create("UICorner",{CornerRadius=UDim.new(1,0)},Floating)
 
--- ARRASTAR
 local function MakeDraggable(object,handle)
-    local dragging = false
-    local dragStart
-    local startPosition
-
+    local dragging,dragStart,startPosition=false,nil,nil
     handle.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1
-        or input.UserInputType == Enum.UserInputType.Touch then
-
-            dragging = true
-            dragStart = input.Position
-            startPosition = object.Position
-
-            input.Changed:Connect(function()
-                if input.UserInputState == Enum.UserInputState.End then
-                    dragging = false
-                end
-            end)
+        if input.UserInputType==Enum.UserInputType.MouseButton1 or input.UserInputType==Enum.UserInputType.Touch then
+            dragging=true; dragStart=input.Position; startPosition=object.Position
+            input.Changed:Connect(function() if input.UserInputState==Enum.UserInputState.End then dragging=false end end)
         end
     end)
-
     UserInputService.InputChanged:Connect(function(input)
-        if dragging and (
-            input.UserInputType == Enum.UserInputType.MouseMovement
-            or input.UserInputType == Enum.UserInputType.Touch
-        ) then
-
-            local delta = input.Position-dragStart
-
-            object.Position = UDim2.new(
-                startPosition.X.Scale,
-                startPosition.X.Offset+delta.X,
-                startPosition.Y.Scale,
-                startPosition.Y.Offset+delta.Y
-            )
+        if dragging and (input.UserInputType==Enum.UserInputType.MouseMovement or input.UserInputType==Enum.UserInputType.Touch) then
+            local delta=input.Position-dragStart
+            object.Position=UDim2.new(startPosition.X.Scale,startPosition.X.Offset+delta.X,startPosition.Y.Scale,startPosition.Y.Offset+delta.Y)
         end
     end)
 end
-
 MakeDraggable(Main,Header)
 MakeDraggable(Floating,Floating)
 
--- ABAS
-local TabBar = Create("Frame",{
-    Size = UDim2.new(1,-16,0,38),
-    Position = UDim2.fromOffset(8,65),
-    BackgroundTransparency = 1
+-- MENU LATERAL E AREA DE CONTEUDO
+local Sidebar = Create("Frame",{
+    Name="Sidebar", Size=UDim2.new(0,132,1,-74), Position=UDim2.fromOffset(8,66),
+    BackgroundTransparency=1
 },Main)
-
+Create("UIListLayout",{Padding=UDim.new(0,8),SortOrder=Enum.SortOrder.LayoutOrder},Sidebar)
 local PagesContainer = Create("Frame",{
-    Size = UDim2.new(1,-16,1,-112),
-    Position = UDim2.fromOffset(8,108),
-    BackgroundTransparency = 1
+    Name="PagesContainer", Size=UDim2.new(1,-154,1,-76), Position=UDim2.fromOffset(146,66),
+    BackgroundTransparency=1
 },Main)
-
-local Pages = {}
-local TabButtons = {}
-
+local Pages,TabButtons={},{}
 local function CreatePage(name)
-    local page = Create("ScrollingFrame",{
-        Name = name,
-        Size = UDim2.fromScale(1,1),
-        BackgroundTransparency = 1,
-        BorderSizePixel = 0,
-        ScrollBarThickness = 4,
-        CanvasSize = UDim2.new(0,0,0,0),
-        AutomaticCanvasSize = Enum.AutomaticSize.Y,
-        Visible = false
-    },PagesContainer)
-
-    Create("UIListLayout",{
-        Padding = UDim.new(0,7),
-        SortOrder = Enum.SortOrder.LayoutOrder
-    },page)
-
-    Pages[name] = page
-    return page
+    local page=Create("ScrollingFrame",{Name=name,Size=UDim2.fromScale(1,1),BackgroundTransparency=1,
+        BorderSizePixel=0,ScrollBarThickness=4,CanvasSize=UDim2.new(0,0,0,0),
+        AutomaticCanvasSize=Enum.AutomaticSize.Y,Visible=false},PagesContainer)
+    Create("UIListLayout",{Padding=UDim.new(0,8),SortOrder=Enum.SortOrder.LayoutOrder},page)
+    Create("UIPadding",{PaddingRight=UDim.new(0,6),PaddingTop=UDim.new(0,2)},page)
+    Pages[name]=page; return page
 end
-
-local PlayerPage = CreatePage("PLAYER")
-local VisualPage = CreatePage("VISUALS")
-local FarmPage = CreatePage("FARM")
-local ConfigPage = CreatePage("CONFIG")
-
+local PlayerPage=CreatePage("PLAYER")
+local VisualPage=CreatePage("VISUALS")
+local FarmPage=CreatePage("FARM")
+local ConfigPage=CreatePage("CONFIG")
+local SelectedPageName="PLAYER"
 local function SelectPage(name)
-    for pageName,page in pairs(Pages) do
-        page.Visible = pageName == name
-    end
-
+    SelectedPageName=name
+    for pageName,page in pairs(Pages) do page.Visible=pageName==name end
     for tabName,button in pairs(TabButtons) do
-        button.BackgroundTransparency = tabName == name and 0 or 0.45
+        button.BackgroundTransparency=tabName==name and 0 or 0.48
+        button.TextTransparency=tabName==name and 0 or 0.12
     end
 end
-
-local function CreateTab(name,position)
-    local button = Create("TextButton",{
-        Size = UDim2.new(0.25,-5,1,0),
-        Position = UDim2.new(position,position*5,0,0),
-        BackgroundColor3 = Themes.Kitty.Button,
-        Text = name,
-        TextColor3 = Color3.new(1,1,1),
-        TextSize = 11,
-        Font = Enum.Font.GothamBold
-    },TabBar)
-
-    Create("UICorner",{CornerRadius=UDim.new(0,7)},button)
-
-    TabButtons[name] = button
-
-    button.MouseButton1Click:Connect(function()
-        SelectPage(name)
-    end)
+local function CreateTab(name,label)
+    local button=Create("TextButton",{Size=UDim2.new(1,0,0,42),BackgroundColor3=Themes.Kitty.Button,
+        BackgroundTransparency=0.48,Text=label,TextColor3=Color3.new(1,1,1),TextSize=11,
+        Font=Enum.Font.GothamBold,TextXAlignment=Enum.TextXAlignment.Left},Sidebar)
+    Create("UICorner",{CornerRadius=UDim.new(0,9)},button)
+    Create("UIPadding",{PaddingLeft=UDim.new(0,12)},button)
+    TabButtons[name]=button
+    button.MouseButton1Click:Connect(function() SelectPage(name) end)
 end
-
-CreateTab("PLAYER",0)
-CreateTab("VISUALS",0.25)
-CreateTab("FARM",0.50)
-CreateTab("CONFIG",0.75)
-
+CreateTab("PLAYER","👤  PLAYER")
+CreateTab("VISUALS","👁  VISUALS")
+CreateTab("FARM","🪙  FARM")
+CreateTab("CONFIG","⚙  CONFIG")
 SelectPage("PLAYER")
 
 -- BOTOES
@@ -341,36 +251,74 @@ local function AddButton(page,text,callback)
     return button
 end
 
--- TOGGLES
+-- TOGGLES (chave deslizante no estilo Mario Hub)
 local function AddToggle(page,title,setting,callback)
-    local button
+    local row = Create("Frame",{
+        Name = "ToggleContainer",
+        Size = UDim2.new(1,-6,0,42),
+        BackgroundColor3 = Themes.Kitty.Button,
+        BorderSizePixel = 0
+    },page)
+    Create("UICorner",{CornerRadius=UDim.new(0,7)},row)
 
-    button = AddButton(page,title..": OFF",function()
+    local label = Create("TextLabel",{
+        Size = UDim2.new(1,-68,1,0),
+        Position = UDim2.fromOffset(10,0),
+        BackgroundTransparency = 1,
+        Text = title,
+        TextColor3 = Color3.new(1,1,1),
+        TextSize = 12,
+        Font = Enum.Font.GothamBold,
+        TextXAlignment = Enum.TextXAlignment.Left
+    },row)
+
+    local track = Create("Frame",{
+        Name = "ToggleTrack",
+        Size = UDim2.fromOffset(42,22),
+        Position = UDim2.new(1,-52,0.5,-11),
+        BackgroundColor3 = Themes.Kitty.Track,
+        BorderSizePixel = 0
+    },row)
+    Create("UICorner",{CornerRadius=UDim.new(1,0)},track)
+
+    local knob = Create("Frame",{
+        Name = "ToggleKnob",
+        Size = UDim2.fromOffset(16,16),
+        Position = UDim2.fromOffset(3,3),
+        BackgroundColor3 = Color3.new(1,1,1),
+        BorderSizePixel = 0
+    },track)
+    Create("UICorner",{CornerRadius=UDim.new(1,0)},knob)
+
+    local hitbox = Create("TextButton",{
+        Name = "ToggleHitbox",
+        Size = UDim2.new(1,0,1,0),
+        BackgroundTransparency = 1,
+        Text = "",
+        AutoButtonColor = false
+    },row)
+
+    local function updateVisual(enabled)
+        track.BackgroundColor3 = enabled and Themes[CurrentTheme].Header or Themes[CurrentTheme].Track
+        knob.Position = enabled and UDim2.new(1,-19,0,3) or UDim2.fromOffset(3,3)
+    end
+
+    hitbox.MouseButton1Click:Connect(function()
         Settings[setting] = not Settings[setting]
-
-        button.Text = title..
-            (Settings[setting] and ": ON" or ": OFF")
-
-        if callback then
-            callback(Settings[setting])
-        end
+        updateVisual(Settings[setting])
+        if callback then callback(Settings[setting]) end
     end)
 
     ToggleButtons[setting] = {
-        Button = button,
-        Title = title
+        Row = row, Track = track, Knob = knob, Update = updateVisual, Title = title
     }
-
-    return button
+    updateVisual(Settings[setting] == true)
+    return row
 end
 
 local function SetToggleVisual(setting,enabled)
     local item = ToggleButtons[setting]
-
-    if item and item.Button then
-        item.Button.Text = item.Title..
-            (enabled and ": ON" or ": OFF")
-    end
+    if item and item.Update then item.Update(enabled) end
 end
 
 -- SLIDERS
@@ -540,6 +488,49 @@ RunService.Stepped:Connect(function()
         end
     end
 end)
+
+-- ANTI-FLING
+local AntiFlingConnection
+
+local function SetAntiFling(enabled)
+    Settings.AntiFling = enabled
+
+    if AntiFlingConnection then
+        AntiFlingConnection:Disconnect()
+        AntiFlingConnection = nil
+    end
+
+    if enabled then
+        AntiFlingConnection = RunService.Heartbeat:Connect(function()
+            local character = LocalPlayer.Character
+            local root = character and character:FindFirstChild("HumanoidRootPart")
+            local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+
+            if not root or not humanoid or humanoid.Health <= 0 then
+                return
+            end
+
+            local velocity = root.AssemblyLinearVelocity
+            local angular = root.AssemblyAngularVelocity
+
+            if velocity.Magnitude > 120 then
+                root.AssemblyLinearVelocity = Vector3.new(
+                    math.clamp(velocity.X,-60,60),
+                    math.clamp(velocity.Y,-60,60),
+                    math.clamp(velocity.Z,-60,60)
+                )
+            end
+
+            if angular.Magnitude > 80 then
+                root.AssemblyAngularVelocity = Vector3.zero
+            end
+        end)
+    end
+
+    SetToggleVisual("AntiFling",enabled)
+end
+
+AddToggle(PlayerPage,"Anti-Fling","AntiFling",SetAntiFling)
 
 -- FLY MOBILE
 local FlyControls = Create("Frame",{
@@ -778,6 +769,25 @@ local function RefreshRoles(force)
     end
 end
 
+-- VERIFICAR SE O PERSONAGEM ESTA VIVO
+-- Nao exige workspace.Map: algumas versoes/servidores do MM2
+-- organizam o mapa de outra forma ou demoram para replicar essa pasta.
+local function IsLocalPlayerPlaying()
+    local character = LocalPlayer.Character
+    if not character or not character.Parent then
+        return false
+    end
+
+    local humanoid = character:FindFirstChildOfClass("Humanoid")
+    local root = character:FindFirstChild("HumanoidRootPart")
+
+    if not humanoid or humanoid.Health <= 0 or not root then
+        return false
+    end
+
+    return true
+end
+
 local function GetPlayerTool(player,name)
     local character = player.Character
     local backpack = player:FindFirstChild("Backpack")
@@ -788,13 +798,11 @@ end
 
 local function GetRole(player)
     local entry = RoleCache[player.Name]
-
-    if entry == nil then
-        entry = RoleCache[player.UserId]
-    end
+        or RoleCache[player.UserId]
+        or RoleCache[tostring(player.UserId)]
 
     if type(entry) == "table" then
-        if entry.Dead == true then
+        if entry.Dead == true or entry.dead == true then
             return "Dead"
         end
 
@@ -1108,25 +1116,25 @@ AddToggle(FarmPage,"Resetar com bolsa cheia","ResetWhenFull",function(enabled)
 end)
 
 -- ESTADO DA RODADA
-local RoundActive = true
-local FarmPaused = false
+local RoundActive = false
+local FarmPaused = true
 local FarmTarget = nil
+local FarmArrivedTarget = nil
 local FarmResetPending = false
 local LastTargetCheck = 0
 local LastFarmReset = 0
 
--- TRAVA: UM RESET POR RODADA
 local FarmResetUsedThisRound = false
 
--- DECLARACAO ANTECIPADA
 local UpdateBagDisplay
 local StartFarmMovement
 local StopFarmMovement
+local PauseFarmMovement
 
 -- MOCHILA
 UpdateBagDisplay = function()
     if not BagCurrent or not BagMaximum or BagMaximum <= 0 then
-        BagTitle.Text = "MOCHILA: aguardando evento do jogo..."
+        BagTitle.Text = "MOCHILA: aguardando dados..."
         BagFill.Size = UDim2.new(0,0,1,0)
         BagFill.BackgroundColor3 = Color3.fromRGB(255,220,80)
         return
@@ -1168,10 +1176,14 @@ else
     warn("[HelloKittyHub] CoinCollected nao encontrado")
 end
 
--- FUNCAO PARA INICIAR UMA NOVA RODADA
+-- NOVA RODADA
 local function ResetRoundState()
-    RoundActive = true
-    FarmPaused = false
+    table.clear(RoleCache)
+    RefreshRoles(true)
+
+    RoundActive = IsLocalPlayerPlaying()
+    FarmPaused = not RoundActive
+
     FarmTarget = nil
     FarmResetPending = false
     ResettingForFull = false
@@ -1183,17 +1195,19 @@ local function ResetRoundState()
     UpdateBagDisplay()
 
     if Settings.AutoFarm then
-        FarmStatus.Text = "Status: nova rodada, retomando..."
+        if RoundActive then
+            FarmStatus.Text = "Status: nova rodada, retomando..."
 
-        task.delay(1,function()
-            if Settings.AutoFarm
-            and RoundActive
-            and not FarmResetUsedThisRound then
-
-                StartFarmMovement()
-                FarmStatus.Text = "Status: Farm retomado"
-            end
-        end)
+            task.delay(1,function()
+                if Settings.AutoFarm
+                and RoundActive
+                and not FarmResetUsedThisRound then
+                    StartFarmMovement()
+                end
+            end)
+        else
+            FarmStatus.Text = "Status: aguardando entrar na rodada"
+        end
     end
 end
 
@@ -1207,7 +1221,6 @@ end
 -- INICIO DA RODADA
 if RoundStart and RoundStart:IsA("RemoteEvent") then
     RoundStart.OnClientEvent:Connect(function()
-        table.clear(RoleCache)
         ResetRoundState()
 
         if Settings.ESP then
@@ -1228,9 +1241,8 @@ if RoundEnd and RoundEnd:IsA("RemoteEvent") then
         FarmResetPending = false
         ResettingForFull = false
 
-        if FarmVelocity and FarmVelocity.Parent then
-            FarmVelocity.VectorVelocity = Vector3.zero
-        end
+        table.clear(RoleCache)
+        StopFarmMovement()
 
         if Settings.AutoFarm then
             FarmStatus.Text = "Status: aguardando próxima rodada"
@@ -1281,6 +1293,7 @@ end
 local function GetNearestCoin()
     local character = LocalPlayer.Character
     local root = character and character:FindFirstChild("HumanoidRootPart")
+    local humanoid = character and character:FindFirstChildOfClass("Humanoid")
 
     if not root then
         return nil
@@ -1435,11 +1448,13 @@ StopFarmMovement = function()
     end
 
     FarmTarget = nil
+    FarmArrivedTarget = nil
 end
 
--- ZERAR VELOCIDADE SEM DESTRUIR O FARM
-local function PauseFarmMovement()
+-- PAUSAR MOVIMENTO
+PauseFarmMovement = function()
     FarmTarget = nil
+    FarmArrivedTarget = nil
 
     if FarmVelocity and FarmVelocity.Parent then
         FarmVelocity.VectorVelocity = Vector3.zero
@@ -1448,13 +1463,20 @@ end
 
 -- INICIAR MOVIMENTO
 StartFarmMovement = function()
-    StopFarmMovement()
-
-    if not RoundActive or FarmPaused then
+    if FarmConnection then
         return
     end
 
-    if FarmResetUsedThisRound or FarmResetPending or ResettingForFull then
+    if not Settings.AutoFarm
+    or not RoundActive
+    or FarmPaused
+    or FarmResetUsedThisRound
+    or FarmResetPending
+    or ResettingForFull then
+        return
+    end
+
+    if not IsLocalPlayerPlaying() then
         return
     end
 
@@ -1486,6 +1508,14 @@ StartFarmMovement = function()
 
         if not root.Parent or not FarmVelocity or not FarmVelocity.Parent then
             StopFarmMovement()
+            return
+        end
+
+        if not IsLocalPlayerPlaying() then
+            RoundActive = false
+            FarmPaused = true
+            PauseFarmMovement()
+            FarmStatus.Text = "Status: aguardando entrar na rodada"
             return
         end
 
@@ -1526,7 +1556,6 @@ StartFarmMovement = function()
                         if humanoid.Parent
                         and RoundActive
                         and FarmResetUsedThisRound then
-
                             humanoid.Health = 0
                         end
                     end)
@@ -1541,29 +1570,27 @@ StartFarmMovement = function()
             return
         end
 
-        -- VERIFICAR SE A MOEDA ATUAL AINDA EXISTE
         if not IsTargetValid(FarmTarget) then
             FarmTarget = nil
+            FarmArrivedTarget = nil
             FarmVelocity.VectorVelocity = Vector3.zero
         end
 
-        -- ESCOLHER NOVA MOEDA SOMENTE QUANDO NAO HOUVER ALVO
         if not FarmTarget then
             if Settings.AvoidMurderer then
                 FarmTarget = GetCoinFarFromMurderer()
             else
                 FarmTarget = GetNearestCoin()
             end
+            FarmArrivedTarget = nil
         end
 
-        -- NENHUMA MOEDA ENCONTRADA
         if not FarmTarget then
             FarmVelocity.VectorVelocity = Vector3.zero
             FarmStatus.Text = "Status: procurando moedas..."
             return
         end
 
-        -- VALIDAR NOVAMENTE
         if not IsTargetValid(FarmTarget) then
             FarmTarget = nil
             FarmVelocity.VectorVelocity = Vector3.zero
@@ -1571,8 +1598,18 @@ StartFarmMovement = function()
             return
         end
 
-        -- MOVIMENTO DIRETO AO CENTRO DA MOEDA
-        -- MANTEM A VELOCIDADE CONFIGURADA, SEM DESACELERAR
+        -- Depois de alcançar a moeda, mantém o movimento parado nela
+        -- até a coleta ser confirmada (a moeda desaparecer).
+        -- Isso evita alternar entre velocidade máxima e zero a cada frame.
+        if FarmArrivedTarget == FarmTarget then
+            FarmVelocity.VectorVelocity = Vector3.zero
+            if humanoid and humanoid.Parent then
+                humanoid:Move(Vector3.zero, true)
+            end
+            FarmStatus.Text = "Status: confirmando coleta..."
+            return
+        end
+
         local targetPosition = FarmTarget.Position
         local delta = targetPosition-root.Position
         local distance = delta.Magnitude
@@ -1580,17 +1617,14 @@ StartFarmMovement = function()
         FarmStatus.Text = "Status: coletando moedas..."
 
         if distance > 0.05 then
+            -- Mantém a velocidade configurada, sem desacelerar na aproximação.
             FarmVelocity.VectorVelocity = delta.Unit*Settings.FarmSpeed
         else
             FarmVelocity.VectorVelocity = Vector3.zero
-
-            if os.clock()-LastTargetCheck > 0.2 then
-                LastTargetCheck = os.clock()
-
-                if not IsTargetValid(FarmTarget) then
-                    FarmTarget = nil
-                end
+            if humanoid and humanoid.Parent then
+                humanoid:Move(Vector3.zero, true)
             end
+            FarmArrivedTarget = FarmTarget
         end
     end)
 end
@@ -1608,12 +1642,21 @@ local function SetAutoFarm(enabled)
         FarmResetPending = FarmResetUsedThisRound
         ResettingForFull = FarmResetUsedThisRound
         FarmTarget = nil
+        FarmArrivedTarget = nil
 
-        if RoundActive and not FarmResetUsedThisRound then
+        table.clear(RoleCache)
+        RefreshRoles(true)
+
+        if IsLocalPlayerPlaying() and not FarmResetUsedThisRound then
+            RoundActive = true
+            FarmPaused = false
+
             StartFarmMovement()
             FarmStatus.Text = "Status: AutoFarm ativado"
         else
-            FarmStatus.Text = "Status: aguardando próxima rodada"
+            RoundActive = false
+            FarmPaused = true
+            FarmStatus.Text = "Status: aguardando entrar na rodada"
         end
     else
         StopFarmMovement()
@@ -1649,6 +1692,46 @@ AddButton(FarmPage,"Velocidade padrão: 22",function()
     end
 end)
 
+-- MONITORAR PARTICIPACAO NA RODADA
+task.spawn(function()
+    while ScreenGui.Parent do
+        if Settings.AutoFarm then
+            RefreshRoles(false)
+
+            local playing = IsLocalPlayerPlaying()
+
+            if playing then
+                if not RoundActive and not FarmResetUsedThisRound then
+                    RoundActive = true
+                    FarmPaused = false
+                    FarmTarget = nil
+                    FarmResetPending = false
+                    ResettingForFull = false
+
+                    BagCurrent = 0
+                    BagMaximum = nil
+                    UpdateBagDisplay()
+                end
+
+                if RoundActive
+                and not FarmConnection
+                and not FarmResetUsedThisRound
+                and not FarmResetPending then
+                    StartFarmMovement()
+                end
+            else
+                RoundActive = false
+                FarmPaused = true
+                PauseFarmMovement()
+
+                FarmStatus.Text = "Status: aguardando entrar na rodada"
+            end
+        end
+
+        task.wait(1)
+    end
+end)
+
 -- ATUALIZAR MOCHILA
 task.spawn(function()
     while ScreenGui.Parent do
@@ -1668,7 +1751,12 @@ LocalPlayer.CharacterAdded:Connect(function()
     end
 
     if Settings.AutoFarm then
-        if RoundActive
+        StopFarmMovement()
+
+        RefreshRoles(true)
+
+        if IsLocalPlayerPlaying()
+        and RoundActive
         and not FarmPaused
         and not FarmResetUsedThisRound
         and not FarmResetPending then
@@ -1677,9 +1765,7 @@ LocalPlayer.CharacterAdded:Connect(function()
 
             StartFarmMovement()
             FarmStatus.Text = "Status: Farm retomado"
-
         else
-            StopFarmMovement()
             FarmStatus.Text = "Status: aguardando próxima rodada"
         end
     end
@@ -1702,6 +1788,8 @@ local function ApplyTheme(name)
     Main.BackgroundColor3 = theme.Main
     Header.BackgroundColor3 = theme.Header
     Floating.BackgroundColor3 = theme.Header
+    Sidebar.BackgroundColor3 = theme.Main
+    Minimize.BackgroundColor3 = theme.Button
 
     for _,button in pairs(TabButtons) do
         button.BackgroundColor3 = theme.Button
@@ -1711,8 +1799,16 @@ local function ApplyTheme(name)
         for _,object in ipairs(page:GetChildren()) do
             if object:IsA("TextButton") then
                 object.BackgroundColor3 = theme.Button
-            elseif object:IsA("Frame") and object.Name == "SliderContainer" then
+            elseif object:IsA("Frame") and (object.Name == "SliderContainer" or object.Name == "ToggleContainer") then
                 object.BackgroundColor3 = theme.Button
+                if object.Name == "ToggleContainer" then
+                    local track = object:FindFirstChild("ToggleTrack")
+                    if track then
+                        local settingName
+                        for key,item in pairs(ToggleButtons) do if item.Row == object then settingName=key break end end
+                        track.BackgroundColor3 = (settingName and Settings[settingName]) and theme.Header or theme.Track
+                    end
+                end
             end
         end
     end
@@ -1728,6 +1824,28 @@ local function ApplyTheme(name)
     UpButton.BackgroundColor3 = theme.Header
     DownButton.BackgroundColor3 = theme.Header
 end
+
+-- ANTI-AFK (mesmo metodo usado no Murder Mystery 2.txt do Mario Hub)
+local AntiAfkConnection
+local function SetAntiAfk(enabled)
+    Settings.AntiAfk = enabled
+
+    if enabled then
+        if not AntiAfkConnection then
+            AntiAfkConnection = LocalPlayer.Idled:Connect(function()
+                if Settings.AntiAfk then
+                    VirtualUser:CaptureController()
+                    VirtualUser:ClickButton2(Vector2.new())
+                end
+            end)
+        end
+    elseif AntiAfkConnection then
+        AntiAfkConnection:Disconnect()
+        AntiAfkConnection = nil
+    end
+end
+
+AddToggle(PlayerPage, "Anti-AFK", "AntiAfk", SetAntiAfk)
 
 AddButton(ConfigPage,"Tema: Kitty",function()
     ApplyTheme("Kitty")
@@ -1745,6 +1863,37 @@ AddButton(ConfigPage,"Tema: Christmas",function()
     ApplyTheme("Christmas")
 end)
 
+-- DESEXECUTAR (DENTRO DE CONFIGURACOES, COM CONFIRMACAO)
+local UnloadButton
+local UnloadPending=false
+local function UnloadHub()
+    Settings.AutoFarm=false; Settings.Fly=false; Settings.Noclip=false
+    Settings.AntiAfk=false
+    if AntiAfkConnection then AntiAfkConnection:Disconnect(); AntiAfkConnection=nil end
+    Settings.ESP=false; Settings.AntiFling=false
+    StopFly(); StopFarmMovement(); RestoreCollision()
+    if AntiFlingConnection then AntiFlingConnection:Disconnect(); AntiFlingConnection=nil end
+    EnableESP(false)
+    Settings.XRay=false; SetXRay(false)
+    Settings.FullBright=false; SetFullBright(false)
+    ScreenGui:Destroy()
+end
+UnloadButton=AddButton(ConfigPage,"⏻  Desexecutar Hub",function()
+    if not UnloadPending then
+        UnloadPending=true
+        UnloadButton.Text="Confirmar desexecucao? Clique novamente"
+        task.delay(5,function()
+            if UnloadButton and UnloadButton.Parent and UnloadPending then
+                UnloadPending=false
+                UnloadButton.Text="⏻  Desexecutar Hub"
+            end
+        end)
+        return
+    end
+    UnloadPending=false
+    UnloadHub()
+end)
+
 -- MINIMIZAR
 Minimize.MouseButton1Click:Connect(function()
     Main.Visible = false
@@ -1756,28 +1905,6 @@ Floating.MouseButton1Click:Connect(function()
     Floating.Visible = false
 end)
 
--- FECHAR
-Close.MouseButton1Click:Connect(function()
-    Settings.AutoFarm = false
-    Settings.Fly = false
-    Settings.Noclip = false
-    Settings.ESP = false
-
-    StopFly()
-    StopFarmMovement()
-    RestoreCollision()
-
-    EnableESP(false)
-
-    Settings.XRay = false
-    SetXRay(false)
-
-    Settings.FullBright = false
-    SetFullBright(false)
-
-    ScreenGui:Destroy()
-end)
-
 -- MOVIMENTO
 RunService.Heartbeat:Connect(function()
     if ScreenGui.Parent then
@@ -1787,4 +1914,4 @@ end)
 
 ApplyTheme("Kitty")
 
-print("A Tropa da Hello Kitty Hub v1.2.2 carregada!")
+print("Hello Kitty Hub v1.3.6 carregado!")
