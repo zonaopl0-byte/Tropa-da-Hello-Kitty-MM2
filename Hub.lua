@@ -1,23 +1,15 @@
 --[[
     A TROPA DA HELLO KITTY HUB
-    Versao 1.6.1 - MOBILE + PC
+    Versao 1.6.2 - MOBILE + PC
     by EOGuizin_X
 
-    Base de melhorias inspirada no Mario Hub (xDTaraZ):
-    - Util.Busy com timeout (anti-travamento)
-    - Gates de Remote (desativa so a feature afetada)
-    - Esp folder com GUID (sem colisao)
-    - LPH_JIT passthrough (anti-deteccao opcional)
-    - Botao "Pegar Arma do Xerife" na aba COMBATE
+    Mudancas da 1.6.1 -> 1.6.2:
+    - Botao "Pegar Arma" reescrito SEM ProximityPrompt/firetouchinterest
+    - Removido bloco LPH_JIT (causava travamento em alguns executores)
+    - GenerateGUID trocado por nome aleatorio puro
 ]]
 
-local HUB_VERSION = "1.6.1"
-
--- LPH_JIT passthrough (se o executor nao suportar, vira no-op)
-if not LPH_OBFUSCATED then
-    local Passthrough = function(fn) return fn end
-    LPH_JIT, LPH_JIT_MAX, LPH_NO_VIRTUALIZE = Passthrough, Passthrough, Passthrough
-end
+local HUB_VERSION = "1.6.2"
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -98,14 +90,10 @@ local State = {
     Alive = true,
     ActionBusy = false,
     BusySince = 0,
-    Halted = {},
 }
 
 local Config = {
     BusyTimeout = 6,
-    JobFailLimit = 5,
-    JobFailWindow = 10,
-    TickDelay = 0.5,
 }
 
 -- UTIL
@@ -143,9 +131,9 @@ function Util.WarpAndReturn(targetCFrame, action)
     return ok
 end
 
--- REMOTES + GATES
-local Remotes = ReplicatedStorage:WaitForChild("Remotes",10)
-local Gameplay = Remotes and Remotes:WaitForChild("Gameplay",10)
+-- REMOTES
+local Remotes = ReplicatedStorage:FindFirstChild("Remotes")
+local Gameplay = Remotes and Remotes:FindFirstChild("Gameplay")
 
 local RoleRemote = Gameplay and Gameplay:FindFirstChild("GetCurrentPlayerData")
 local CoinCollected = Gameplay and Gameplay:FindFirstChild("CoinCollected")
@@ -187,9 +175,9 @@ local ScreenGui = Create("ScreenGui",{
     ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 },PlayerGui)
 
--- ESP folder com GUID
+-- ESP folder com nome aleatorio (sem GenerateGUID)
 local EspFolder = Create("Folder", {
-    Name = HttpService:GenerateGUID(false),
+    Name = "HK_Esp_" .. tostring(math.random(1,999999)),
 }, ScreenGui)
 
 local Main = Create("Frame",{
@@ -1008,39 +996,18 @@ local function ShootTheMurder()
     if not okRun then finish("erro interno: " .. tostring(errRun)) end
 end
 
--- ========== PEGAR ARMA DO XERIFE ==========
+-- ========== PEGAR ARMA DO XERIFE (versao segura, sem prompts) ==========
 local GrabStatus
 local GrabBusy = false
-
-local function FindGunDrop()
-    local drop = workspace:FindFirstChild("GunDrop", true)
-    if not drop then
-        for _, obj in ipairs(workspace:GetDescendants()) do
-            if obj:IsA("Tool") and obj.Name == "Gun" then
-                return obj
-            end
-        end
-    end
-    return drop
-end
-
-local function GetGunDropPart(drop)
-    if not drop then return nil end
-    if drop:IsA("BasePart") then return drop end
-    if drop:IsA("Model") then
-        return drop.PrimaryPart or drop:FindFirstChildWhichIsA("BasePart", true)
-    end
-    if drop:IsA("Tool") then
-        return drop:FindFirstChild("Handle") or drop:FindFirstChildWhichIsA("BasePart", true)
-    end
-    return drop:FindFirstChildWhichIsA("BasePart", true)
-end
 
 local function GrabSheriffGun()
     if GrabBusy then return end
     GrabBusy = true
 
+    local finished = false
     local function finish(message)
+        if finished then return end
+        finished = true
         if GrabStatus then GrabStatus.Text = "Status: " .. message end
         GrabBusy = false
     end
@@ -1054,76 +1021,51 @@ local function GrabSheriffGun()
         end
 
         local backpack = LocalPlayer:FindFirstChildOfClass("Backpack")
-        local existingGun = (character and character:FindFirstChild("Gun"))
-            or (backpack and backpack:FindFirstChild("Gun"))
-        if existingGun then
+        if (character and character:FindFirstChild("Gun")) or (backpack and backpack:FindFirstChild("Gun")) then
             finish("voce ja tem a arma do xerife."); return
         end
 
-        local drop = FindGunDrop()
-        local part = GetGunDropPart(drop)
-        if not drop or not part then
+        local drop = workspace:FindFirstChild("GunDrop", true)
+        if not drop then
+            for _, obj in ipairs(workspace:GetDescendants()) do
+                if obj:IsA("Tool") and obj.Name == "Gun" then
+                    drop = obj
+                    break
+                end
+            end
+        end
+        if not drop then
             finish("arma do xerife nao encontrada no mapa."); return
         end
 
-        if Util.Busy() then
-            finish("aguarde a acao anterior terminar."); return
-        end
+        local part
+        if drop:IsA("BasePart") then part = drop
+        elseif drop:IsA("Model") then part = drop.PrimaryPart or drop:FindFirstChildWhichIsA("BasePart", true)
+        elseif drop:IsA("Tool") then part = drop:FindFirstChild("Handle") or drop:FindFirstChildWhichIsA("BasePart", true)
+        else part = drop:FindFirstChildWhichIsA("BasePart", true) end
+        if not part then finish("arma sem parte fisica."); return end
 
-        local grabbed = false
+        if Util.Busy() then finish("aguarde a acao anterior."); return end
+
+        -- So teleporta e espera um pouco (o toque natural do personagem pode coletar)
         Util.WarpAndReturn(part.CFrame + Vector3.new(0, 2, 0), function()
-            task.wait(0.15)
-
-            local prompt = part:FindFirstChildWhichIsA("ProximityPrompt", true)
-                or (drop and drop:FindFirstChildWhichIsA("ProximityPrompt", true))
-            if prompt then
-                pcall(function()
-                    prompt:InputHoldBegin()
-                    task.wait((prompt.HoldDuration or 0) + 0.1)
-                    prompt:InputHoldEnd()
-                end)
-            end
-
-            local detector = part:FindFirstChildWhichIsA("ClickDetector", true)
-                or (drop and drop:FindFirstChildWhichIsA("ClickDetector", true))
-            if detector then
-                pcall(function()
-                    if fireclickdetector then
-                        fireclickdetector(detector)
-                    end
-                end)
-            end
-
-            if firetouchinterest then
-                local currentRoot = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-                if currentRoot then
-                    pcall(function()
-                        firetouchinterest(currentRoot, part, 0)
-                        firetouchinterest(currentRoot, part, 1)
-                    end)
-                end
-            end
-
-            task.wait(0.3)
-
-            local ch = LocalPlayer.Character
-            local bp = LocalPlayer:FindFirstChildOfClass("Backpack")
-            grabbed = (ch and ch:FindFirstChild("Gun")) or (bp and bp:FindFirstChild("Gun")) or false
+            task.wait(0.6)
         end)
 
-        if grabbed then
-            finish("arma do xerife pega com sucesso!")
+        local ch = LocalPlayer.Character
+        local bp = LocalPlayer:FindFirstChildOfClass("Backpack")
+        local got = (ch and ch:FindFirstChild("Gun")) or (bp and bp:FindFirstChild("Gun"))
+        if got then
+            finish("arma pega com sucesso!")
         else
-            finish("arma encontrada, mas nao foi possivel pegar. Tente novamente.")
+            finish("teleportou mas o MM2 nao entregou. Toque manualmente.")
         end
     end)
 
-    if not okRun then
-        finish("erro interno: " .. tostring(errRun))
-    end
+    if not okRun then finish("erro: " .. tostring(errRun)) end
 end
 
--- BOTÃO FLUTUANTE FIXO
+-- BOTAO FLUTUANTE FIXO
 ShootFloatButton = Create("TextButton", {
     Name = "KittyShootMurderFloat", Size = UDim2.fromOffset(64,64),
     Position = UDim2.new(1,-200,1,-200), AnchorPoint = Vector2.new(0,0),
@@ -1269,7 +1211,7 @@ local function UpdateGunDropESP()
         if GunDropESP.Target then RemoveGunDropESP() end
         return
     end
-    local drop = FindGunDrop()
+    local drop = workspace:FindFirstChild("GunDrop", true)
     if drop == GunDropESP.Target and GunDropESP.Highlight and GunDropESP.Highlight.Parent then return end
     RemoveGunDropESP()
     if not drop then return end
@@ -2084,9 +2026,6 @@ AvoidToggle.LayoutOrder = 4
 ResetFullToggle.LayoutOrder = 5
 BagFrame.LayoutOrder = 6
 UnloadButton.LayoutOrder = 3
-
--- Ordem da aba COMBATE (para o botão de pegar arma ficar destacado)
--- os botões são criados na ordem: Shoot Float (toggle), SHOOT THE MURDER, PEGAR ARMA
 
 ApplyTheme("Kitty")
 RefreshConfigs()
