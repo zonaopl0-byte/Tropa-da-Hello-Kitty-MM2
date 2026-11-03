@@ -1,10 +1,10 @@
 --[[
     A TROPA DA HELLO KITTY HUB
-    Versao 1.4.4 - MOBILE + PC
+    Versao 1.5.7 - MOBILE + PC
     by EOGuizin_X
 ]]
 
-local HUB_VERSION = "1.4.4"
+local HUB_VERSION = "1.5.7"
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -31,6 +31,7 @@ local Settings = {
     AntiFling = false,
     AntiAfk = false,
     ESP = false,
+    ESP_Gun = false,
     XRay = false,
     FullBright = false,
 
@@ -76,6 +77,12 @@ local RoleCache = {}
 local FlyVelocity
 local FlyGyro
 local FlyConnection
+local FlyAnimationMotors = {}
+local FlyAnimationTime = 0
+local FlyAnimateScript
+local FlyAnimateWasDisabled = false
+local PreviousMouseBehavior
+local PreviousMouseIconEnabled
 
 local FarmVelocity
 local FarmAttachment
@@ -166,9 +173,10 @@ local Minimize = Create("TextButton",{
 Create("UICorner",{CornerRadius=UDim.new(0,8)},Minimize)
 
 local Floating = Create("TextButton",{
-    Name="FloatingButton", Size=UDim2.fromOffset(55,55),
-    Position=UDim2.new(0,20,0.5,0), BackgroundColor3=Themes.Kitty.Header,
-    Text="🎀", TextSize=28, Visible=false, Active=true
+    Name="FloatingButton", Size=UDim2.fromOffset(40,40),
+    AnchorPoint=Vector2.new(0.5,0),
+    Position=UDim2.new(0.5,0,0,6), BackgroundColor3=Themes.Kitty.Header,
+    Text="🎀", TextSize=21, Visible=false, Active=true
 },ScreenGui)
 Create("UICorner",{CornerRadius=UDim.new(1,0)},Floating)
 
@@ -188,7 +196,6 @@ local function MakeDraggable(object,handle)
     end)
 end
 MakeDraggable(Main,Header)
-MakeDraggable(Floating,Floating)
 
 -- MENU LATERAL E AREA DE CONTEUDO
 local Sidebar = Create("Frame",{
@@ -210,6 +217,7 @@ local function CreatePage(name)
     Pages[name]=page; return page
 end
 local PlayerPage=CreatePage("PLAYER")
+local TeleportPage=CreatePage("TELEPORT")
 local VisualPage=CreatePage("VISUALS")
 local FarmPage=CreatePage("FARM")
 local ConfigPage=CreatePage("CONFIG")
@@ -233,6 +241,7 @@ local function CreateTab(name,label)
     button.MouseButton1Click:Connect(function() SelectPage(name) end)
 end
 CreateTab("PLAYER","👤  PLAYER")
+CreateTab("TELEPORT","📍  TELEPORT")
 CreateTab("VISUALS","👁  VISUALS")
 CreateTab("FARM","🪙  FARM")
 CreateTab("SALVOS","💾  SALVAR")
@@ -255,6 +264,157 @@ local function AddButton(page,text,callback)
     button.MouseButton1Click:Connect(callback)
     return button
 end
+
+local RefreshRoles, GetRole -- declaracoes antecipadas usadas pela aba Teleport
+
+-- TELEPORT (inspirado na aba Teleport do Mario Hub)
+local SelectedTeleportPlayer = nil
+local TeleportPlayerList
+local TeleportStatus
+
+local function GetCharacterRoot(player)
+    local character = player and player.Character
+    return character and character:FindFirstChild("HumanoidRootPart")
+end
+
+local function TeleportToCFrame(targetCFrame)
+    local character = LocalPlayer.Character
+    local root = character and character:FindFirstChild("HumanoidRootPart")
+    local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+    if not root or not humanoid or humanoid.Health <= 0 then
+        if TeleportStatus then TeleportStatus.Text = "Status: personagem indisponivel." end
+        return false
+    end
+    if not targetCFrame then
+        if TeleportStatus then TeleportStatus.Text = "Status: destino nao encontrado." end
+        return false
+    end
+    root.CFrame = targetCFrame + Vector3.new(0,3,0)
+    root.AssemblyLinearVelocity = Vector3.zero
+    if TeleportStatus then TeleportStatus.Text = "Status: teleportado com sucesso!" end
+    return true
+end
+
+local function GetLobbyDestination()
+    local lobby = workspace:FindFirstChild("Lobby") or workspace:FindFirstChild("Lobby", true)
+    if not lobby then return nil end
+    local spawns = lobby:FindFirstChild("Spawns", true)
+    local part = spawns and (spawns:IsA("BasePart") and spawns or spawns:FindFirstChildWhichIsA("BasePart", true))
+    return (part or lobby:FindFirstChildWhichIsA("SpawnLocation", true) or lobby:FindFirstChildWhichIsA("BasePart", true))
+end
+
+local function GetMapDestination()
+    -- O MM2 pode colocar o mapa ativo dentro de workspace.Map ou em um modelo filho.
+    local mapRoot = workspace:FindFirstChild("Map", true)
+    local lobby = workspace:FindFirstChild("Lobby", true)
+    local function validPart(part)
+        return part and part:IsA("BasePart") and part:IsDescendantOf(workspace)
+            and (not lobby or not part:IsDescendantOf(lobby))
+    end
+    local function findSpawn(container)
+        if not container then return nil end
+        local spawns = container:FindFirstChild("Spawns", true)
+        if spawns then
+            if validPart(spawns) then return spawns end
+            for _,obj in ipairs(spawns:GetDescendants()) do
+                if validPart(obj) then return obj end
+            end
+        end
+        return nil
+    end
+    local part = findSpawn(mapRoot)
+    if part then return part end
+
+    -- Em algumas versões, o ponto de referência está no CoinContainer.
+    if mapRoot then
+        local coins = mapRoot:FindFirstChild("CoinContainer", true)
+        if coins then
+            for _,obj in ipairs(coins:GetDescendants()) do
+                if validPart(obj) then return obj end
+            end
+        end
+    end
+
+    -- Último recurso: procura uma pasta Spawns fora do Lobby.
+    for _,obj in ipairs(workspace:GetDescendants()) do
+        if obj.Name == "Spawns" and (not lobby or not obj:IsDescendantOf(lobby)) then
+            if validPart(obj) then return obj end
+            for _,child in ipairs(obj:GetDescendants()) do
+                if validPart(child) then return child end
+            end
+        end
+    end
+    return nil
+end
+
+local function TeleportToPlayer(player)
+    local targetRoot = GetCharacterRoot(player)
+    if not targetRoot then
+        if TeleportStatus then TeleportStatus.Text = "Status: jogador sem personagem ativo." end
+        return false
+    end
+    return TeleportToCFrame(targetRoot.CFrame)
+end
+
+local function FindPlayerByRole(role)
+    if type(RefreshRoles) == "function" then RefreshRoles(true) end
+    for _,player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer and GetRole and GetRole(player) == role and GetCharacterRoot(player) then
+            return player
+        end
+    end
+    return nil
+end
+
+local function RefreshTeleportPlayers()
+    if not TeleportPlayerList then return end
+    for _,child in ipairs(TeleportPlayerList:GetChildren()) do
+        if child:IsA("TextButton") then child:Destroy() end
+    end
+    local players = Players:GetPlayers()
+    table.sort(players,function(a,b) return a.Name:lower() < b.Name:lower() end)
+    for _,player in ipairs(players) do
+        if player ~= LocalPlayer then
+            local button = Create("TextButton",{
+                Size=UDim2.new(1,-4,0,28),BackgroundColor3=Themes[CurrentTheme].Button,
+                Text=player.DisplayName .. "  (@" .. player.Name .. ")",
+                TextColor3=Color3.new(1,1,1),TextSize=10,Font=Enum.Font.Gotham,
+                TextTruncate=Enum.TextTruncate.AtEnd
+            },TeleportPlayerList)
+            Create("UICorner",{CornerRadius=UDim.new(0,6)},button)
+            button.MouseButton1Click:Connect(function()
+                SelectedTeleportPlayer = player
+                for _,item in ipairs(TeleportPlayerList:GetChildren()) do
+                    if item:IsA("TextButton") then
+                        item.BackgroundTransparency = item == button and 0 or 0.25
+                    end
+                end
+                if TeleportStatus then TeleportStatus.Text = "Selecionado: " .. player.Name end
+            end)
+        end
+    end
+    TeleportPlayerList.CanvasPosition = Vector2.zero
+end
+
+local TeleportPlaceTitle=Create("TextLabel",{Size=UDim2.new(1,-6,0,25),BackgroundTransparency=1,Text="LOCAIS",TextColor3=Color3.new(1,1,1),TextSize=13,Font=Enum.Font.GothamBold,TextXAlignment=Enum.TextXAlignment.Left,LayoutOrder=1},TeleportPage)
+local LobbyTeleportButton=AddButton(TeleportPage,"🏠  Teleportar para o Lobby",function() local part=GetLobbyDestination(); TeleportToCFrame(part and part.CFrame) end); LobbyTeleportButton.LayoutOrder=2
+local MapTeleportButton=AddButton(TeleportPage,"🗺️  Teleportar para o Mapa",function() local part=GetMapDestination(); TeleportToCFrame(part and part.CFrame) end); MapTeleportButton.LayoutOrder=3
+local MurdererTeleportButton=AddButton(TeleportPage,"🔪  Ir até o Assassino",function() local target=FindPlayerByRole("Murderer"); if target then TeleportToPlayer(target) elseif TeleportStatus then TeleportStatus.Text="Status: assassino nao encontrado." end end); MurdererTeleportButton.LayoutOrder=4
+local SheriffTeleportButton=AddButton(TeleportPage,"🔫  Ir até o Xerife",function() local target=FindPlayerByRole("Sheriff"); if target then TeleportToPlayer(target) elseif TeleportStatus then TeleportStatus.Text="Status: xerife nao encontrado." end end); SheriffTeleportButton.LayoutOrder=5
+local PlayerTitle=Create("TextLabel",{Size=UDim2.new(1,-6,0,25),BackgroundTransparency=1,Text="JOGADORES",TextColor3=Color3.new(1,1,1),TextSize=13,Font=Enum.Font.GothamBold,TextXAlignment=Enum.TextXAlignment.Left,LayoutOrder=6},TeleportPage)
+TeleportPlayerList=Create("ScrollingFrame",{Size=UDim2.new(1,-6,0,130),BackgroundTransparency=0.65,BackgroundColor3=Themes[CurrentTheme].Track,BorderSizePixel=0,ScrollBarThickness=3,CanvasSize=UDim2.new(0,0,0,0),AutomaticCanvasSize=Enum.AutomaticSize.Y,LayoutOrder=7},TeleportPage)
+Create("UICorner",{CornerRadius=UDim.new(0,7)},TeleportPlayerList)
+Create("UIListLayout",{Padding=UDim.new(0,4),SortOrder=Enum.SortOrder.LayoutOrder},TeleportPlayerList)
+Create("UIPadding",{PaddingTop=UDim.new(0,4),PaddingLeft=UDim.new(0,4),PaddingRight=UDim.new(0,4)},TeleportPlayerList)
+local RefreshTeleportButton=AddButton(TeleportPage,"🔄  Atualizar jogadores",RefreshTeleportPlayers); RefreshTeleportButton.LayoutOrder=8
+local SelectedTeleportButton=AddButton(TeleportPage,"📍  Teleportar para selecionado",function() if SelectedTeleportPlayer and SelectedTeleportPlayer.Parent==Players then TeleportToPlayer(SelectedTeleportPlayer) elseif TeleportStatus then TeleportStatus.Text="Status: selecione um jogador primeiro." end end); SelectedTeleportButton.LayoutOrder=9
+TeleportStatus=Create("TextLabel",{Size=UDim2.new(1,-6,0,30),BackgroundTransparency=1,Text="Status: selecione um destino.",TextColor3=Color3.new(1,1,1),TextSize=10,Font=Enum.Font.Gotham,TextWrapped=true,TextXAlignment=Enum.TextXAlignment.Left,LayoutOrder=10},TeleportPage)
+RefreshTeleportPlayers()
+Players.PlayerAdded:Connect(RefreshTeleportPlayers)
+Players.PlayerRemoving:Connect(function(player)
+    if SelectedTeleportPlayer == player then SelectedTeleportPlayer=nil end
+    task.defer(RefreshTeleportPlayers)
+end)
 
 -- TOGGLES (chave deslizante no estilo Mario Hub)
 local function AddToggle(page,title,setting,callback)
@@ -595,6 +755,77 @@ DownButton.InputEnded:Connect(function(input)
     end
 end)
 
+local function RestoreFlyAnimation()
+    for motor, originalTransform in pairs(FlyAnimationMotors) do
+        if motor and motor.Parent then
+            motor.Transform = originalTransform
+        end
+    end
+    table.clear(FlyAnimationMotors)
+    FlyAnimationTime = 0
+
+    if FlyAnimateScript and FlyAnimateScript.Parent then
+        FlyAnimateScript.Disabled = FlyAnimateWasDisabled
+    end
+    FlyAnimateScript = nil
+
+    if PreviousMouseBehavior ~= nil then
+        UserInputService.MouseBehavior = PreviousMouseBehavior
+        PreviousMouseBehavior = nil
+    end
+    if PreviousMouseIconEnabled ~= nil then
+        UserInputService.MouseIconEnabled = PreviousMouseIconEnabled
+        PreviousMouseIconEnabled = nil
+    end
+end
+
+local function ApplySupermanPose(deltaTime)
+    local character = LocalPlayer.Character
+    if not character then return end
+
+    -- Desativa o Animate enquanto voa para impedir que a caminhada sobrescreva a pose.
+    if not FlyAnimateScript then
+        FlyAnimateScript = character:FindFirstChild("Animate")
+        if FlyAnimateScript and FlyAnimateScript:IsA("LocalScript") then
+            FlyAnimateWasDisabled = FlyAnimateScript.Disabled
+            FlyAnimateScript.Disabled = true
+        else
+            FlyAnimateScript = nil
+        end
+    end
+
+    -- Pose Superman fixa: mantém braços e pernas na mesma posição durante o voo.
+    for _, motor in ipairs(character:GetDescendants()) do
+        if motor:IsA("Motor6D") then
+            local name = motor.Name
+            local isTarget = name == "LeftShoulder" or name == "RightShoulder"
+                or name == "Left Shoulder" or name == "Right Shoulder"
+                or name == "Waist" or name == "LeftHip" or name == "RightHip"
+                or name == "Left Hip" or name == "Right Hip"
+            if isTarget and FlyAnimationMotors[motor] == nil then
+                FlyAnimationMotors[motor] = motor.Transform
+            end
+        end
+    end
+
+    for motor, originalTransform in pairs(FlyAnimationMotors) do
+        if motor and motor.Parent then
+            local name = motor.Name
+            if name == "LeftShoulder" or name == "Left Shoulder" then
+                motor.Transform = originalTransform * CFrame.Angles(math.rad(-90), 0, math.rad(-7))
+            elseif name == "RightShoulder" or name == "Right Shoulder" then
+                motor.Transform = originalTransform * CFrame.Angles(math.rad(-90), 0, math.rad(7))
+            elseif name == "Waist" then
+                motor.Transform = originalTransform * CFrame.Angles(math.rad(-12), 0, 0)
+            elseif name == "LeftHip" or name == "Left Hip" then
+                motor.Transform = originalTransform * CFrame.Angles(math.rad(10), 0, math.rad(-3))
+            elseif name == "RightHip" or name == "Right Hip" then
+                motor.Transform = originalTransform * CFrame.Angles(math.rad(10), 0, math.rad(3))
+            end
+        end
+    end
+end
+
 local function ClearFlyObjects()
     if FlyConnection then
         FlyConnection:Disconnect()
@@ -610,6 +841,8 @@ local function ClearFlyObjects()
         FlyGyro:Destroy()
         FlyGyro = nil
     end
+
+    RestoreFlyAnimation()
 
     local character = LocalPlayer.Character
     local humanoid = character and character:FindFirstChildOfClass("Humanoid")
@@ -648,6 +881,12 @@ local function StartFly()
     humanoid.PlatformStand = false
     humanoid.AutoRotate = false
 
+    -- Shift Lock enquanto estiver voando (mouse centralizado no PC).
+    PreviousMouseBehavior = UserInputService.MouseBehavior
+    PreviousMouseIconEnabled = UserInputService.MouseIconEnabled
+    UserInputService.MouseBehavior = Enum.MouseBehavior.LockCenter
+    UserInputService.MouseIconEnabled = false
+
     FlyVelocity = Instance.new("BodyVelocity")
     FlyVelocity.Name = "KittyFlyVelocity"
     FlyVelocity.MaxForce = Vector3.new(1000000,1000000,1000000)
@@ -663,9 +902,10 @@ local function StartFly()
     FlyGyro.CFrame = Camera.CFrame
     FlyGyro.Parent = root
 
-    FlyControls.Visible = UserInputService.TouchEnabled
+    -- O voo agora acompanha a inclinacao da camera; nao precisa dos botoes verticais.
+    FlyControls.Visible = false
 
-    FlyConnection = RunService.RenderStepped:Connect(function()
+    FlyConnection = RunService.RenderStepped:Connect(function(deltaTime)
         if not Settings.Fly or not root.Parent or not humanoid.Parent then
             StopFly()
             return
@@ -674,21 +914,25 @@ local function StartFly()
         Camera = workspace.CurrentCamera
 
         local direction = humanoid.MoveDirection
-        local vertical = 0
+        local cameraLook = Camera.CFrame.LookVector
+        local horizontalLook = Vector3.new(cameraLook.X, 0, cameraLook.Z)
+        local forwardAmount = 0
 
-        if UpHeld or UserInputService:IsKeyDown(Enum.KeyCode.Space) then
-            vertical = vertical+1
+        if horizontalLook.Magnitude > 0.001 and direction.Magnitude > 0.001 then
+            horizontalLook = horizontalLook.Unit
+            -- So inclina verticalmente quando o jogador anda para a frente
+            -- em relacao a direcao para a qual a camera esta olhando.
+            forwardAmount = math.max(0, direction:Dot(horizontalLook))
         end
 
-        if DownHeld or UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then
-            vertical = vertical-1
-        end
+        local vertical = math.clamp(cameraLook.Y, -1, 1) * forwardAmount
 
         FlyVelocity.Velocity =
-            direction*Settings.FlySpeed+
-            Vector3.new(0,vertical*Settings.FlySpeed,0)
+            direction*Settings.FlySpeed +
+            Vector3.new(0, vertical*Settings.FlySpeed, 0)
 
         FlyGyro.CFrame = Camera.CFrame
+        ApplySupermanPose(deltaTime)
     end)
 
     SetToggleVisual("Fly",true)
@@ -741,7 +985,7 @@ end
 local RoleFetchBusy = false
 local LastRoleFetch = 0
 
-local function RefreshRoles(force)
+RefreshRoles = function(force)
     if RoleFetchBusy then return end
 
     if not force and os.clock()-LastRoleFetch < 1 then
@@ -800,7 +1044,7 @@ local function GetPlayerTool(player,name)
         or (backpack and backpack:FindFirstChild(name))
 end
 
-local function GetRole(player)
+GetRole = function(player)
     local entry = RoleCache[player.Name]
         or RoleCache[player.UserId]
         or RoleCache[tostring(player.UserId)]
@@ -969,6 +1213,104 @@ local function EnableESP(enabled)
 end
 
 AddToggle(VisualPage,"ESP por funcao","ESP",EnableESP)
+
+-- GUN DROP ESP (adaptado da logica do Mario Hub)
+local GunDropESP = { Target = nil, Highlight = nil, Billboard = nil }
+local function RemoveGunDropESP()
+    if GunDropESP.Highlight then
+        GunDropESP.Highlight:Destroy()
+        GunDropESP.Highlight = nil
+    end
+    if GunDropESP.Billboard then
+        GunDropESP.Billboard:Destroy()
+        GunDropESP.Billboard = nil
+    end
+    GunDropESP.Target = nil
+end
+
+local function FindDroppedGun()
+    -- No MM2, a arma derrubada recebe o nome GunDrop e fica dentro do mapa.
+    return workspace:FindFirstChild("GunDrop", true)
+end
+
+local function GetGunAdornee(target)
+    if not target then return nil end
+    if target:IsA("BasePart") then return target end
+    if target:IsA("Model") then
+        return target.PrimaryPart or target:FindFirstChildWhichIsA("BasePart", true)
+    end
+    return target:FindFirstChildWhichIsA("BasePart", true)
+end
+
+local function UpdateGunDropESP()
+    if not Settings.ESP_Gun then
+        if GunDropESP.Target then RemoveGunDropESP() end
+        return
+    end
+
+    local drop = FindDroppedGun()
+    if drop == GunDropESP.Target and GunDropESP.Highlight and GunDropESP.Highlight.Parent then
+        return
+    end
+
+    RemoveGunDropESP()
+    if not drop then return end
+
+    local adornee = GetGunAdornee(drop)
+    if not adornee then return end
+
+    local highlight = Instance.new("Highlight")
+    highlight.Name = "HelloKittyGunDropESP"
+    highlight.Adornee = drop
+    highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+    highlight.FillColor = Color3.fromRGB(255, 205, 65)
+    highlight.OutlineColor = Color3.fromRGB(255, 245, 170)
+    highlight.FillTransparency = 0.35
+    highlight.OutlineTransparency = 0
+    highlight.Parent = workspace
+
+    local billboard = Instance.new("BillboardGui")
+    billboard.Name = "HelloKittyGunDropLabel"
+    billboard.Adornee = adornee
+    billboard.Size = UDim2.fromOffset(130, 32)
+    billboard.StudsOffset = Vector3.new(0, 2.5, 0)
+    billboard.AlwaysOnTop = true
+    billboard.Parent = ScreenGui
+
+    local label = Instance.new("TextLabel")
+    label.Size = UDim2.fromScale(1, 1)
+    label.BackgroundTransparency = 1
+    label.Text = "GUN DROP"
+    label.TextColor3 = Color3.fromRGB(255, 225, 90)
+    label.TextStrokeColor3 = Color3.new(0, 0, 0)
+    label.TextStrokeTransparency = 0.15
+    label.Font = Enum.Font.GothamBold
+    label.TextSize = 14
+    label.Parent = billboard
+
+    GunDropESP.Target = drop
+    GunDropESP.Highlight = highlight
+    GunDropESP.Billboard = billboard
+end
+
+local function EnableGunDropESP(enabled)
+    Settings.ESP_Gun = enabled
+    if enabled then
+        UpdateGunDropESP()
+    else
+        RemoveGunDropESP()
+    end
+end
+
+AddToggle(VisualPage,"ESP Gun Drop","ESP_Gun",EnableGunDropESP)
+
+task.spawn(function()
+    while ScreenGui.Parent do
+        pcall(UpdateGunDropESP)
+        task.wait(0.5)
+    end
+    RemoveGunDropESP()
+end)
 
 Players.PlayerRemoving:Connect(function(player)
     RemoveESP(player)
@@ -1785,6 +2127,8 @@ local function ApplyTheme(name)
         button.BackgroundColor3 = theme.Button
     end
 
+    if TeleportPlayerList then TeleportPlayerList.BackgroundColor3 = theme.Track end
+
     for _,page in pairs(Pages) do
         -- Percorre todos os descendentes para incluir os temas dentro do seletor.
         for _,object in ipairs(page:GetDescendants()) do
@@ -1937,7 +2281,7 @@ local function LoadConfig(name)
         if Settings[key]==true and item.Callback then pcall(item.Callback,false) end
         Settings[key]=false; item.Update(false)
     end
-    local order={"AntiFling","AntiAfk","XRay","FullBright","ESP","Fly","Noclip","AvoidMurderer","ResetWhenFull","AutoFarm"}
+    local order={"AntiFling","AntiAfk","XRay","FullBright","ESP","ESP_Gun","Fly","Noclip","AvoidMurderer","ResetWhenFull","AutoFarm"}
     for _,key in ipairs(order) do
         local item=ToggleButtons[key]
         local value=data.Settings[key]
@@ -2007,10 +2351,11 @@ local function UnloadHub()
     Settings.AutoFarm=false; Settings.Fly=false; Settings.Noclip=false
     Settings.AntiAfk=false
     if AntiAfkConnection then AntiAfkConnection:Disconnect(); AntiAfkConnection=nil end
-    Settings.ESP=false; Settings.AntiFling=false
+    Settings.ESP=false; Settings.ESP_Gun=false; Settings.AntiFling=false
     StopFly(); StopFarmMovement(); RestoreCollision()
     if AntiFlingConnection then AntiFlingConnection:Disconnect(); AntiFlingConnection=nil end
     EnableESP(false)
+    EnableGunDropESP(false)
     Settings.XRay=false; SetXRay(false)
     Settings.FullBright=false; SetFullBright(false)
     ScreenGui:Destroy()
