@@ -1,10 +1,10 @@
 --[[
     A TROPA DA HELLO KITTY HUB
-    Versao 1.5.7 - MOBILE + PC
+    Versao 1.5.8 - MOBILE + PC
     by EOGuizin_X
 ]]
 
-local HUB_VERSION = "1.5.7"
+local HUB_VERSION = "1.5.8"
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -22,7 +22,7 @@ local Camera = workspace.CurrentCamera
 local Settings = {
     WalkSpeed = 16,
     JumpPower = 50,
-    FlySpeed = 20,
+    FlySpeed = 50,
     FarmSpeed = 22,
     MurdererRadius = 30,
 
@@ -77,6 +77,8 @@ local RoleCache = {}
 local FlyVelocity
 local FlyGyro
 local FlyConnection
+local FlyCurrentSpeed = 0
+local FlyMoveDirection = Vector3.zero
 local FlyAnimationMotors = {}
 local FlyAnimationTime = 0
 local FlyAnimateScript
@@ -855,6 +857,8 @@ local function ClearFlyObjects()
 
     UpHeld = false
     DownHeld = false
+    FlyCurrentSpeed = 0
+    FlyMoveDirection = Vector3.zero
 end
 
 local function StopFly()
@@ -878,7 +882,7 @@ local function StartFly()
     end
 
     Settings.Fly = true
-    humanoid.PlatformStand = false
+    humanoid.PlatformStand = true
     humanoid.AutoRotate = false
 
     -- Shift Lock enquanto estiver voando (mouse centralizado no PC).
@@ -905,33 +909,53 @@ local function StartFly()
     -- O voo agora acompanha a inclinacao da camera; nao precisa dos botoes verticais.
     FlyControls.Visible = false
 
-    FlyConnection = RunService.RenderStepped:Connect(function(deltaTime)
+    FlyCurrentSpeed = 0
+    FlyMoveDirection = Vector3.zero
+
+    -- Movimento baseado no FlyUtility do YARHM: acelera suavemente,
+    -- acompanha o direcional do jogador e usa a inclinacao da camera
+    -- para subir ou descer enquanto avanca. Funciona com teclado e touch.
+    FlyConnection = RunService.Heartbeat:Connect(function(deltaTime)
         if not Settings.Fly or not root.Parent or not humanoid.Parent then
             StopFly()
             return
         end
 
         Camera = workspace.CurrentCamera
+        local moveDirection = humanoid.MoveDirection
+        local maxSpeed = math.max(0, tonumber(Settings.FlySpeed) or 50)
+        local acceleration = 2
 
-        local direction = humanoid.MoveDirection
-        local cameraLook = Camera.CFrame.LookVector
-        local horizontalLook = Vector3.new(cameraLook.X, 0, cameraLook.Z)
-        local forwardAmount = 0
-
-        if horizontalLook.Magnitude > 0.001 and direction.Magnitude > 0.001 then
-            horizontalLook = horizontalLook.Unit
-            -- So inclina verticalmente quando o jogador anda para a frente
-            -- em relacao a direcao para a qual a camera esta olhando.
-            forwardAmount = math.max(0, direction:Dot(horizontalLook))
+        if moveDirection.Magnitude > 0.01 then
+            FlyCurrentSpeed = math.min(maxSpeed, FlyCurrentSpeed + acceleration)
+            FlyMoveDirection = moveDirection.Unit
+        else
+            FlyCurrentSpeed = math.max(0, FlyCurrentSpeed - acceleration)
         end
 
-        local vertical = math.clamp(cameraLook.Y, -1, 1) * forwardAmount
+        local horizontalVelocity = Vector3.zero
+        if FlyMoveDirection.Magnitude > 0.01 then
+            horizontalVelocity = FlyMoveDirection * FlyCurrentSpeed
+        end
 
-        FlyVelocity.Velocity =
-            direction*Settings.FlySpeed +
-            Vector3.new(0, vertical*Settings.FlySpeed, 0)
+        local look = Camera.CFrame.LookVector.Unit
+        local lookDot = FlyMoveDirection:Dot(look)
+        local forwardSign = lookDot < 0 and -1 or 1
+        local flatLook = Vector3.new(look.X, 0, look.Z)
+        local alignment = 0
+        if flatLook.Magnitude > 0.001 then
+            alignment = math.abs(FlyMoveDirection:Dot(flatLook.Unit))
+        end
+        local verticalVelocity = look.Y * forwardSign * alignment * FlyCurrentSpeed
 
-        FlyGyro.CFrame = Camera.CFrame
+        FlyVelocity.Velocity = Vector3.new(
+            horizontalVelocity.X,
+            verticalVelocity,
+            horizontalVelocity.Z
+        )
+
+        local bank = -math.rad(lookDot * ((FlyCurrentSpeed / math.max(maxSpeed, 1)) * 30))
+        FlyGyro.CFrame = CFrame.new(root.Position, root.Position + look) * CFrame.Angles(bank, 0, 0)
         ApplySupermanPose(deltaTime)
     end)
 
@@ -2194,7 +2218,7 @@ AntiFlingToggle.LayoutOrder = 1
 AntiAfkToggle.LayoutOrder = 2
 NoclipToggle.LayoutOrder = 3
 FlyToggle.LayoutOrder = 4
-AddSlider(PlayerPage,"Fly Speed","FlySpeed",10,150,1)
+AddSlider(PlayerPage,"Fly Speed","FlySpeed",10,350,10)
 AddSlider(PlayerPage,"WalkSpeed","WalkSpeed",16,200,1)
 AddSlider(PlayerPage,"JumpForce","JumpPower",50,200,1)
 for _, slider in ipairs(SliderObjects) do
