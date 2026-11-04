@@ -1,6 +1,6 @@
 --[[
     HELLO KITTY HUB - DLC: COMBATE
-    Auto Shot e Auto Grab com trava de conflito (IsBusy).
+    Auto Win: Inocente teleporta pro Lobby se for pro mapa.
 ]]
 
 local Players = game:GetService("Players")
@@ -115,6 +115,26 @@ local function GetAlivePlayers()
     return alive
 end
 
+-- ========== VERIFICA SE ESTÁ NO MAPA ==========
+local function IsInMap()
+    local map = workspace:FindFirstChild("Map") or workspace:FindFirstChild("Map", true)
+    if not map then return false end
+    
+    local myRoot = GetRoot(LocalPlayer)
+    if not myRoot then return false end
+    
+    -- Verifica se o jogador está dentro da área do mapa
+    -- (se a pasta Map for um Model, checa se está perto dela)
+    if map:IsA("Model") then
+        local mapPart = map.PrimaryPart or map:FindFirstChildWhichIsA("BasePart", true)
+        if mapPart then
+            return (myRoot.Position - mapPart.Position).Magnitude < 500
+        end
+    end
+    
+    return false
+end
+
 -- ========== AÇÕES ==========
 local function TeleportToLobby()
     local lobby = workspace:FindFirstChild("Lobby") or workspace:FindFirstChild("Lobby", true)
@@ -127,8 +147,6 @@ local function TeleportToLobby()
     if r then r.CFrame = spawn.CFrame + Vector3.new(0, 3, 0); r.AssemblyLinearVelocity = Vector3.zero end
 end
 
--- ========== VARIÁVEL DE TRAVA ==========
--- Impede que o Auto Shot e o Auto Grab tentem teleportar ao mesmo tempo
 local IsBusy = false
 
 local function ShootTarget(targetPlayer)
@@ -146,15 +164,13 @@ local function ShootTarget(targetPlayer)
 end
 
 local function AutoShootMurderer()
-    if IsBusy then return false, false end -- Se estiver ocupado (pegando arma), não atira
+    if IsBusy then return false, false end
     IsBusy = true
-    
     local m = GetMurderer()
     if not m then IsBusy = false; return false, true end
     local myRoot = GetRoot(LocalPlayer)
     local tRoot = GetRoot(m)
     if not myRoot or not tRoot then IsBusy = false; return false, false end
-    
     local home = myRoot.CFrame
     myRoot.CFrame = tRoot.CFrame * CFrame.new(0, 0, 5)
     myRoot.AssemblyLinearVelocity = Vector3.zero
@@ -164,13 +180,14 @@ local function AutoShootMurderer()
     local h = m.Character and m.Character:FindFirstChildOfClass("Humanoid")
     local dead = not h or h.Health <= 0
     if not dead then myRoot.CFrame = home; myRoot.AssemblyLinearVelocity = Vector3.zero end
-    
     IsBusy = false
     return ok, dead
 end
 
+-- ========== AUTO GRAB GUN (SÓ INOCENTE) ==========
 local function AutoGrabGun()
-    if IsBusy then return end -- Se estiver atirando, não pega
+    if GetRole(LocalPlayer) ~= "Innocent" then return end
+    if IsBusy then return end
     IsBusy = true
     
     if not GetGun() then
@@ -297,7 +314,6 @@ local function ToggleAutoShot(enabled)
         AutoShotActive = true
         if FloatingBtnShot then FloatingBtnShot.Visible = false end
         if FloatToggleObj then FloatToggleObj.SetState(false); FloatToggleObj.Lock() end
-        
         task.spawn(function()
             while AutoShotActive do
                 pcall(function()
@@ -340,7 +356,6 @@ local function ToggleAutoKill(enabled)
         AutoKillActive = true
         if FloatingBtnKill then FloatingBtnKill.Visible = false end
         if KillToggleObj then KillToggleObj.SetState(false); KillToggleObj.Lock() end
-        
         task.spawn(function()
             while AutoKillActive do
                 pcall(function()
@@ -365,6 +380,7 @@ local function ToggleAutoKill(enabled)
     end
 end
 
+-- ========== AUTO WIN ==========
 local AutoWinActive = false
 local function ToggleAutoWin(enabled)
     if enabled then
@@ -383,7 +399,9 @@ local function ToggleAutoWin(enabled)
             while AutoWinActive do
                 pcall(function()
                     local role = GetRole(LocalPlayer)
+                    
                     if role == "Murderer" then
+                        -- Assassino: Mata
                         local knife = GetKnife()
                         if knife then
                             for _, t in ipairs(GetAlivePlayers()) do
@@ -392,15 +410,22 @@ local function ToggleAutoWin(enabled)
                                 task.wait(0.5)
                             end
                         end
+                        
                     elseif role == "Sheriff" or role == "Hero" then
-                        if not GetGun() then
-                            AutoGrabGun()
-                        else
-                            local m = GetMurderer()
-                            if m then AutoShootMurderer() end
-                        end
+                        -- Xerife/Herói: Atira
+                        local m = GetMurderer()
+                        if m then AutoShootMurderer() end
+                        
                     elseif role == "Innocent" then
-                        TeleportToLobby()
+                        -- Inocente: Se foi pro mapa, volta pro Lobby
+                        if IsInMap() then
+                            TeleportToLobby()
+                        else
+                            -- Se já está no lobby e não tem arma, tenta pegar se cair
+                            if not GetGun() then
+                                AutoGrabGun()
+                            end
+                        end
                     end
                 end)
                 task.wait(1)
@@ -426,7 +451,7 @@ AutoShotToggleObj = AddCustomToggle("🤖 Auto Shot", false, function(state)
     ToggleAutoShot(state)
 end, LeftCol)
 
-AutoGrabToggleObj = AddCustomToggle("🔫 Auto Grab Gun", false, function(state)
+AutoGrabToggleObj = AddCustomToggle("🔫 Auto Grab Gun (Inocente)", false, function(state)
     ToggleAutoGrab(state)
 end, LeftCol)
 
@@ -462,4 +487,4 @@ task.spawn(function()
     end
 end)
 
-print("[HelloKitty DLC] Aba Combate com Trava de Conflito Ativada!")
+print("[HelloKitty DLC] Aba Combate com Auto Win: Inocente foge pro Lobby se for pro mapa!")
