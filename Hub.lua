@@ -1,16 +1,21 @@
 --[[
     A TROPA DA HELLO KITTY HUB
-    Versao 1.7.5 - MOBILE + PC
+    Versao 1.7.7 - MOBILE + PC
     by Guilherme_FOX123
 
-    Mudancas da 1.7.4 -> 1.7.5:
-    - Noclip do farm fica ativado enquanto o farm esta ATIVO:
-      procurando, andando, chegando na moeda, esperando coletar.
-    - So desliga quando: farm pausado, morreu, mochila cheia, resetando,
-      ou toggle AutoFarm desligado.
+    Mudancas da 1.7.6 -> 1.7.7:
+    - AutoFarm NAO desliga mais automaticamente quando voce esta no
+      lobby ou aguardando rodada. O toggle fica LIGADO esperando.
+    - Se voce entrar no mapa com rodada em andamento (entrada atrasada),
+      o AutoFarm tambem continua ligado, mas nao farma ate a proxima
+      rodada em que voce participar.
+    - O toggle AutoFarm SO desliga quando VOCE desliga manualmente.
+    - (Mantido do 1.7.6) Noclip do farm desliga imediatamente ao morrer
+      ou ao encher a mochila.
+    - (Mantido do 1.7.6) AutoFarm nao farma em entrada atrasada.
 ]]
 
-local HUB_VERSION = "1.7.5"
+local HUB_VERSION = "1.7.7"
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -85,6 +90,10 @@ local ResettingForFull = false
 
 local BagCurrent = nil
 local BagMaximum = nil
+
+-- Sinais de participacao na rodada
+local RoundSignalActive = false
+local RoundSignalCoins = false
 
 -- STATE
 local State = {
@@ -962,38 +971,67 @@ GetRole = function(player)
     return "Unknown"
 end
 
--- ========== VERIFICA SE O JOGADOR ESTA NA RODADA COM ROLE VALIDA ==========
+-- Sinais de participacao na rodada
+if RoundStart and RoundStart:IsA("RemoteEvent") then
+    RoundStart.OnClientEvent:Connect(function()
+        RoundSignalActive = true
+        RoundSignalCoins = false
+    end)
+end
+if RoundEnd and RoundEnd:IsA("RemoteEvent") then
+    RoundEnd.OnClientEvent:Connect(function()
+        RoundSignalActive = false
+        RoundSignalCoins = false
+    end)
+end
+if CoinsStarted and CoinsStarted:IsA("RemoteEvent") then
+    CoinsStarted.OnClientEvent:Connect(function()
+        RoundSignalCoins = true
+    end)
+end
+
+local function IsNearLobby()
+    local lobbyPart = GetLobbyDestination()
+    local char = LocalPlayer.Character
+    local root = char and char:FindFirstChild("HumanoidRootPart")
+    if not lobbyPart or not root then return false end
+    return (root.Position - lobbyPart.Position).Magnitude < 80
+end
+
+-- ========== VERIFICA SE O JOGADOR ESTA PARTICIPANDO DA RODADA ==========
+-- Exige sinal REAL de participacao. Entrada atrasada retorna false.
 local function IsPlayerInRoundWithRole()
     local character = LocalPlayer.Character
     if not character or not character.Parent then return false, "sem personagem" end
     local humanoid = character:FindFirstChildOfClass("Humanoid")
     if not humanoid or humanoid.Health <= 0 then return false, "morto" end
+    local root = character:FindFirstChild("HumanoidRootPart")
+    if not root then return false, "sem root" end
 
     local mapFound = workspace:FindFirstChild("Map")
         or workspace:FindFirstChild("Map", true)
         or workspace:FindFirstChild("CoinContainer", true)
     if not mapFound then return false, "fora da rodada" end
 
+    if IsNearLobby() then return false, "no lobby" end
+
     local role = GetRole(LocalPlayer)
-
-    if role == "Unknown" then
-        local backpack = LocalPlayer:FindFirstChild("Backpack")
-        local c = LocalPlayer.Character
-        local hasKnife = (c and c:FindFirstChild("Knife")) or (backpack and backpack:FindFirstChild("Knife"))
-        local hasGun = (c and c:FindFirstChild("Gun")) or (backpack and backpack:FindFirstChild("Gun"))
-        if hasKnife then role = "Murderer"
-        elseif hasGun then role = "Sheriff" end
-    end
-
-    if role == "Unknown" then
-        role = "Innocent"
-    end
-
     if role == "Innocent" or role == "Sheriff" or role == "Hero" or role == "Murderer" then
         return true, role
     end
 
-    return false, role
+    local backpack = LocalPlayer:FindFirstChild("Backpack")
+    local c = LocalPlayer.Character
+    local hasKnife = (c and c:FindFirstChild("Knife")) or (backpack and backpack:FindFirstChild("Knife"))
+    local hasGun   = (c and c:FindFirstChild("Gun"))   or (backpack and backpack:FindFirstChild("Gun"))
+    if hasKnife then return true, "Murderer" end
+    if hasGun then return true, "Sheriff" end
+
+    if RoundSignalActive or RoundSignalCoins then
+        return true, "Innocent"
+    end
+
+    return false, "entrada atrasada (rodada em andamento)"
 end
 
 -- ESP
@@ -1325,6 +1363,8 @@ task.spawn(function()
 end)
 
 local function ResetRoundState()
+    RoundSignalActive = true
+    RoundSignalCoins = true
     table.clear(RoleCache)
     RefreshRoles(true)
     RoundActive = IsLocalPlayerPlaying()
@@ -1345,7 +1385,7 @@ local function ResetRoundState()
                 end
             end)
         else
-            FarmStatus.Text = "Status: aguardando entrar na rodada"
+            FarmStatus.Text = "Status: AutoFarm ativado, aguardando entrar na rodada"
         end
     end
 end
@@ -1369,7 +1409,7 @@ if RoundEnd and RoundEnd:IsA("RemoteEvent") then
         FarmTarget = nil; FarmResetPending = false; ResettingForFull = false
         table.clear(RoleCache)
         StopFarmMovement()
-        if Settings.AutoFarm then FarmStatus.Text = "Status: aguardando próxima rodada" end
+        if Settings.AutoFarm then FarmStatus.Text = "Status: AutoFarm ativado, aguardando próxima rodada" end
     end)
 end
 
@@ -1520,9 +1560,13 @@ StartFarmMovement = function()
 
         local charNow = LocalPlayer.Character
         local humNow = charNow and charNow:FindFirstChildOfClass("Humanoid")
+        -- Morte: para o farm e desliga noclip IMEDIATAMENTE
         if not humNow or humNow.Health <= 0 then
-            RoundActive = false; FarmPaused = true; PauseFarmMovement()
-            FarmStatus.Text = "Status: voce morreu"
+            RoundActive = false; FarmPaused = true
+            NoclipFarm = false
+            if not NoclipManual then RestoreCollision() end
+            PauseFarmMovement()
+            FarmStatus.Text = "Status: voce morreu, farm parado"
             return
         end
 
@@ -1538,6 +1582,8 @@ StartFarmMovement = function()
             PauseFarmMovement(); FarmStatus.Text = "Status: aguardando próxima rodada"; return
         end
         if IsBagFull() then
+            NoclipFarm = false
+            if not NoclipManual then RestoreCollision() end
             PauseFarmMovement(); FarmStatus.Text = "Status: mochila cheia!"
             if Settings.ResetWhenFull and RoundActive and not FarmResetUsedThisRound and not FarmResetPending then
                 FarmResetUsedThisRound = true; FarmResetPending = true; ResettingForFull = true
@@ -1553,7 +1599,6 @@ StartFarmMovement = function()
         end
         if FarmResetPending or ResettingForFull then PauseFarmMovement(); return end
 
-        -- FARM ATIVO: noclip ligado enquanto procura / anda / chega / espera
         if not NoclipFarm then
             NoclipFarm = true
             ApplyNoclip()
@@ -1622,6 +1667,8 @@ StartFarmMovement = function()
     end)
 end
 
+-- [FIX 1.7.7] SetAutoFarm: NAO desliga o toggle se nao estiver na rodada.
+-- O toggle fica LIGADO aguardando. So desliga se o usuario desligar.
 local function SetAutoFarm(enabled)
     Settings.AutoFarm = enabled
     if enabled then
@@ -1650,15 +1697,14 @@ local function SetAutoFarm(enabled)
             StartFarmMovement()
             FarmStatus.Text = "Status: AutoFarm ativado (" .. tostring(role) .. ")"
         else
+            -- NAO desliga o toggle. Fica ligado aguardando.
             RoundActive = false; FarmPaused = true
-            FarmStatus.Text = "Status: aguardando rodada (" .. tostring(role) .. ")"
+            FarmStatus.Text = "Status: AutoFarm ativado, aguardando rodada (" .. tostring(role) .. ")"
         end
     else
         StopFarmMovement()
-
         NoclipFarm = false
         if not NoclipManual then RestoreCollision() end
-
         FarmResetPending = false; ResettingForFull = false; FarmPaused = false
         FarmStatus.Text = "Status: AutoFarm desligado"
     end
@@ -1666,6 +1712,8 @@ end
 
 local AutoFarmToggle = AddToggle(FarmPage,"Auto Farm","AutoFarm",SetAutoFarm)
 
+-- [FIX 1.7.7] Monitor: NAO desliga o toggle se nao estiver na rodada.
+-- O toggle fica LIGADO aguardando. So desliga se o usuario desligar.
 task.spawn(function()
     while ScreenGui.Parent do
         if Settings.AutoFarm then
@@ -1684,14 +1732,18 @@ task.spawn(function()
                     StartFarmMovement()
                 end
             else
+                -- NAO esta na rodada: pausa o movimento, mas mantem o toggle LIGADO.
                 RoundActive = false; FarmPaused = true
                 PauseFarmMovement()
                 NoclipFarm = false
                 if not NoclipManual then RestoreCollision() end
-                if not playing then
-                    FarmStatus.Text = "Status: aguardando entrar na rodada"
+
+                if role == "entrada atrasada (rodada em andamento)" then
+                    FarmStatus.Text = "Status: AutoFarm ativado, aguardando próxima rodada (entrada atrasada)"
+                elseif not playing then
+                    FarmStatus.Text = "Status: AutoFarm ativado, aguardando entrar na rodada"
                 else
-                    FarmStatus.Text = "Status: aguardando rodada (" .. tostring(role) .. ")"
+                    FarmStatus.Text = "Status: AutoFarm ativado, aguardando rodada (" .. tostring(role) .. ")"
                 end
             end
         end
@@ -1706,7 +1758,10 @@ task.spawn(function()
     end
 end)
 
+-- CharacterAdded: limpa colisao antiga e nao retoma o farm
+-- se nao estiver participando da rodada.
 LocalPlayer.CharacterAdded:Connect(function()
+    table.clear(OriginalCollision)
     task.wait(1)
     ApplyMovement()
     if Settings.Fly then StopFly() end
@@ -1723,7 +1778,7 @@ LocalPlayer.CharacterAdded:Connect(function()
             StartFarmMovement()
             FarmStatus.Text = "Status: Farm retomado (" .. tostring(role) .. ")"
         else
-            FarmStatus.Text = "Status: aguardando rodada (" .. tostring(role) .. ")"
+            FarmStatus.Text = "Status: AutoFarm ativado, aguardando rodada (" .. tostring(role) .. ")"
         end
     end
     if Settings.ESP then
