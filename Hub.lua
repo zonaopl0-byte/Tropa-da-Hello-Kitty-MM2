@@ -1,15 +1,14 @@
 --[[
     A TROPA DA HELLO KITTY HUB
-    Versao 1.6.2 - MOBILE + PC
+    Versao 1.6.9 - MOBILE + PC
     by EOGuizin_X
 
-    Mudancas da 1.6.1 -> 1.6.2:
-    - Botao "Pegar Arma" reescrito SEM ProximityPrompt/firetouchinterest
-    - Removido bloco LPH_JIT (causava travamento em alguns executores)
-    - GenerateGUID trocado por nome aleatorio puro
+    Base: 1.6.8 (funcional)
+    Mudanca: Shoot the Murder agora funciona como Xerife E como Heroi
+    - Procura qualquer Tool com Remote "Shoot" (Gun, HeroGun, etc.)
 ]]
 
-local HUB_VERSION = "1.6.2"
+local HUB_VERSION = "1.6.9"
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -43,7 +42,9 @@ local Settings = {
     AutoFarm = false,
     AvoidMurderer = true,
     ResetWhenFull = true,
-    ShowShootFloat = false
+    ShowShootFloat = false,
+    ShowGrabFloat = false,
+    AutoGrabGun = false
 }
 
 local Themes = {
@@ -90,6 +91,7 @@ local State = {
     Alive = true,
     ActionBusy = false,
     BusySince = 0,
+    LastAutoGrab = 0,
 }
 
 local Config = {
@@ -175,7 +177,6 @@ local ScreenGui = Create("ScreenGui",{
     ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 },PlayerGui)
 
--- ESP folder com nome aleatorio (sem GenerateGUID)
 local EspFolder = Create("Folder", {
     Name = "HK_Esp_" .. tostring(math.random(1,999999)),
 }, ScreenGui)
@@ -903,8 +904,22 @@ end
 
 -- COMBATE
 local CombatStatus
+local GrabStatus
 local ShootFloatButton
+local GrabFloatButton
 local ShootBusy = false
+local GrabBusy = false
+
+-- Procura QUALQUER Tool com Remote "Shoot" (Gun, HeroGun, etc.)
+local function FindShootTool(container)
+    if not container then return nil end
+    for _, obj in ipairs(container:GetChildren()) do
+        if obj:IsA("Tool") and obj:FindFirstChild("Shoot") then
+            return obj
+        end
+    end
+    return nil
+end
 
 local function FindMurdererForShot()
     RefreshRoles(true)
@@ -943,9 +958,17 @@ local function ShootTheMurder()
         end
 
         local backpack = LocalPlayer:FindFirstChildOfClass("Backpack")
-        local gun = (character and character:FindFirstChild("Gun")) or (backpack and backpack:FindFirstChild("Gun"))
+
+        -- Procura qualquer Tool com Remote "Shoot" (funciona pra Xerife E Heroi)
+        local gun = FindShootTool(character) or FindShootTool(backpack)
+
+        -- Fallback: tenta "Gun" direto se nada achou
+        if not gun then
+            gun = (character and character:FindFirstChild("Gun")) or (backpack and backpack:FindFirstChild("Gun"))
+        end
+
         if not gun or not gun:IsA("Tool") then
-            finish("equipe a arma de xerife primeiro."); return
+            finish("equipe a arma de xerife/heroi primeiro."); return
         end
 
         if os.clock() - LastShootAt < ShootCooldown then
@@ -987,7 +1010,7 @@ local function ShootTheMurder()
 
         if success then
             LastShootAt = os.clock()
-            finish("disparo enviado contra " .. target.Name .. ".")
+            finish("disparo enviado contra " .. target.Name .. " (como " .. gun.Name .. ").")
         else
             finish("falha ao solicitar o disparo: " .. tostring(err))
         end
@@ -996,76 +1019,63 @@ local function ShootTheMurder()
     if not okRun then finish("erro interno: " .. tostring(errRun)) end
 end
 
--- ========== PEGAR ARMA DO XERIFE (versao segura, sem prompts) ==========
-local GrabStatus
-local GrabBusy = false
+-- ========== AUTO PEGAR ARMA (SEM WarpAndReturn, SEM Util.Busy) ==========
+local function AutoGrabOnce()
+    local character = LocalPlayer.Character
+    local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+    local root = character and character:FindFirstChild("HumanoidRootPart")
+    if not humanoid or humanoid.Health <= 0 or not root then return end
 
-local function GrabSheriffGun()
-    if GrabBusy then return end
-    GrabBusy = true
-
-    local finished = false
-    local function finish(message)
-        if finished then return end
-        finished = true
-        if GrabStatus then GrabStatus.Text = "Status: " .. message end
-        GrabBusy = false
+    local backpack = LocalPlayer:FindFirstChildOfClass("Backpack")
+    -- Se ja tem qualquer Tool com Shoot, nao faz nada
+    if FindShootTool(character) or FindShootTool(backpack) then
+        return
+    end
+    -- Fallback: se tem Gun no character/backpack, nao faz nada
+    if (character and character:FindFirstChild("Gun")) or (backpack and backpack:FindFirstChild("Gun")) then
+        return
     end
 
-    local okRun, errRun = pcall(function()
-        local character = LocalPlayer.Character
-        local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-        local root = character and character:FindFirstChild("HumanoidRootPart")
-        if not humanoid or humanoid.Health <= 0 or not root then
-            finish("voce precisa estar vivo."); return
-        end
-
-        local backpack = LocalPlayer:FindFirstChildOfClass("Backpack")
-        if (character and character:FindFirstChild("Gun")) or (backpack and backpack:FindFirstChild("Gun")) then
-            finish("voce ja tem a arma do xerife."); return
-        end
-
-        local drop = workspace:FindFirstChild("GunDrop", true)
-        if not drop then
-            for _, obj in ipairs(workspace:GetDescendants()) do
-                if obj:IsA("Tool") and obj.Name == "Gun" then
-                    drop = obj
-                    break
-                end
+    -- Procura GunDrop
+    local drop = workspace:FindFirstChild("GunDrop", true)
+    if not drop then
+        for _, obj in ipairs(workspace:GetDescendants()) do
+            if obj:IsA("Tool") and obj.Name == "Gun" then
+                drop = obj
+                break
             end
         end
-        if not drop then
-            finish("arma do xerife nao encontrada no mapa."); return
-        end
+    end
+    if not drop then return end
 
-        local part
-        if drop:IsA("BasePart") then part = drop
-        elseif drop:IsA("Model") then part = drop.PrimaryPart or drop:FindFirstChildWhichIsA("BasePart", true)
-        elseif drop:IsA("Tool") then part = drop:FindFirstChild("Handle") or drop:FindFirstChildWhichIsA("BasePart", true)
-        else part = drop:FindFirstChildWhichIsA("BasePart", true) end
-        if not part then finish("arma sem parte fisica."); return end
+    -- Pega a parte fisica
+    local part
+    if drop:IsA("BasePart") then part = drop
+    elseif drop:IsA("Model") then part = drop.PrimaryPart or drop:FindFirstChildWhichIsA("BasePart", true)
+    elseif drop:IsA("Tool") then part = drop:FindFirstChild("Handle") or drop:FindFirstChildWhichIsA("BasePart", true)
+    else part = drop:FindFirstChildWhichIsA("BasePart", true) end
+    if not part then return end
 
-        if Util.Busy() then finish("aguarde a acao anterior."); return end
+    -- Teleporta DIRETO
+    local home = root.CFrame
+    root.CFrame = part.CFrame + Vector3.new(0, 2, 0)
+    root.AssemblyLinearVelocity = Vector3.zero
+    task.wait(0.6)
+    local currentRoot = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+    if currentRoot then
+        currentRoot.CFrame = home
+    end
 
-        -- So teleporta e espera um pouco (o toque natural do personagem pode coletar)
-        Util.WarpAndReturn(part.CFrame + Vector3.new(0, 2, 0), function()
-            task.wait(0.6)
-        end)
-
-        local ch = LocalPlayer.Character
-        local bp = LocalPlayer:FindFirstChildOfClass("Backpack")
-        local got = (ch and ch:FindFirstChild("Gun")) or (bp and bp:FindFirstChild("Gun"))
-        if got then
-            finish("arma pega com sucesso!")
-        else
-            finish("teleportou mas o MM2 nao entregou. Toque manualmente.")
-        end
-    end)
-
-    if not okRun then finish("erro: " .. tostring(errRun)) end
+    -- Verifica se pegou
+    local ch = LocalPlayer.Character
+    local bp = LocalPlayer:FindFirstChildOfClass("Backpack")
+    local got = FindShootTool(ch) or FindShootTool(bp)
+    if got and GrabStatus then
+        GrabStatus.Text = "Status: Auto pegou a arma!"
+    end
 end
 
--- BOTAO FLUTUANTE FIXO
+-- BOTAO FLUTUANTE SHOOT
 ShootFloatButton = Create("TextButton", {
     Name = "KittyShootMurderFloat", Size = UDim2.fromOffset(64,64),
     Position = UDim2.new(1,-200,1,-200), AnchorPoint = Vector2.new(0,0),
@@ -1077,17 +1087,33 @@ Create("UICorner", {CornerRadius = UDim.new(1,0)}, ShootFloatButton)
 Create("UIStroke", {Color = Color3.fromRGB(255,235,245), Thickness = 2}, ShootFloatButton)
 ShootFloatButton.Activated:Connect(ShootTheMurder)
 
+-- BOTAO FLUTUANTE AUTO GRAB
+GrabFloatButton = Create("TextButton", {
+    Name = "KittyGrabGunFloat", Size = UDim2.fromOffset(64,64),
+    Position = UDim2.new(1,-200,1,-280), AnchorPoint = Vector2.new(0,0),
+    BackgroundColor3 = Themes.Kitty.Button, Text = "🎯", TextSize = 28,
+    TextColor3 = Color3.new(1,1,1), Visible = false, Active = true,
+    AutoButtonColor = true, ZIndex = 20
+}, ScreenGui)
+Create("UICorner", {CornerRadius = UDim.new(1,0)}, GrabFloatButton)
+Create("UIStroke", {Color = Color3.fromRGB(255,235,245), Thickness = 2}, GrabFloatButton)
+GrabFloatButton.Activated:Connect(function()
+    Settings.AutoGrabGun = not Settings.AutoGrabGun
+    SetToggleVisual("AutoGrabGun", Settings.AutoGrabGun)
+    GrabFloatButton.BackgroundColor3 = Settings.AutoGrabGun and Themes[CurrentTheme].Header or Themes[CurrentTheme].Button
+    if GrabStatus then
+        GrabStatus.Text = Settings.AutoGrabGun and "Status: Auto ATIVADO" or "Status: Auto DESATIVADO"
+    end
+end)
+
 AddToggle(CombatPage, "Mostrar botao flutuante Shoot the Murder", "ShowShootFloat", function(enabled)
     ShootFloatButton.Visible = enabled
 end)
+AddToggle(CombatPage, "Mostrar botao flutuante Auto Grab", "ShowGrabFloat", function(enabled)
+    GrabFloatButton.Visible = enabled
+end)
 AddButton(CombatPage, "🔫  SHOOT THE MURDER", ShootTheMurder)
-AddButton(CombatPage, "🔫  PEGAR ARMA DO XERIFE", GrabSheriffGun)
-Create("TextLabel", {
-    Size = UDim2.new(1,-8,0,44), BackgroundTransparency = 1,
-    Text = "Precisa estar vivo como xerife e com a arma. O botao mira no assassino identificado e solicita a ativacao da arma.",
-    TextColor3 = Color3.new(1,1,1), TextSize = 10, Font = Enum.Font.Gotham,
-    TextWrapped = true, TextXAlignment = Enum.TextXAlignment.Left
-}, CombatPage)
+
 CombatStatus = Create("TextLabel", {
     Size = UDim2.new(1,-8,0,28), BackgroundTransparency = 1,
     Text = "Status: aguardando.", TextColor3 = Color3.new(1,1,1), TextSize = 10,
@@ -1095,9 +1121,33 @@ CombatStatus = Create("TextLabel", {
 }, CombatPage)
 GrabStatus = Create("TextLabel", {
     Size = UDim2.new(1,-8,0,28), BackgroundTransparency = 1,
-    Text = "Grab: aguarde.", TextColor3 = Color3.new(1,1,1), TextSize = 10,
+    Text = "Grab: aguardando.", TextColor3 = Color3.new(1,1,1), TextSize = 10,
     Font = Enum.Font.Gotham, TextWrapped = true, TextXAlignment = Enum.TextXAlignment.Left
 }, CombatPage)
+
+AddToggle(CombatPage, "Auto Pegar Arma do Xerife", "AutoGrabGun", function(enabled)
+    GrabFloatButton.BackgroundColor3 = enabled and Themes[CurrentTheme].Header or Themes[CurrentTheme].Button
+    if GrabStatus then
+        GrabStatus.Text = enabled and "Status: Auto ATIVADO" or "Status: Auto DESATIVADO"
+    end
+end)
+
+Create("TextLabel", {
+    Size = UDim2.new(1,-8,0,44), BackgroundTransparency = 1,
+    Text = "Precisa estar vivo como xerife/heroi e com a arma. O botao mira no assassino identificado e solicita a ativacao da arma.",
+    TextColor3 = Color3.new(1,1,1), TextSize = 10, Font = Enum.Font.Gotham,
+    TextWrapped = true, TextXAlignment = Enum.TextXAlignment.Left
+}, CombatPage)
+
+-- Loop do AutoGrab: task.spawn simples
+task.spawn(function()
+    while ScreenGui.Parent do
+        if Settings.AutoGrabGun then
+            pcall(AutoGrabOnce)
+        end
+        task.wait(2)
+    end
+end)
 
 -- ESP
 local function RemoveESP(player)
@@ -1776,6 +1826,9 @@ local function ApplyTheme(name)
     Sidebar.BackgroundColor3 = theme.Main
     Minimize.BackgroundColor3 = theme.Button
     if ShootFloatButton then ShootFloatButton.BackgroundColor3 = theme.Header end
+    if GrabFloatButton then
+        GrabFloatButton.BackgroundColor3 = Settings.AutoGrabGun and theme.Header or theme.Button
+    end
     for _,button in pairs(TabButtons) do button.BackgroundColor3 = theme.Button end
     if TeleportPlayerList then TeleportPlayerList.BackgroundColor3 = theme.Track end
     local rowToSetting = {}
@@ -1914,7 +1967,7 @@ local function LoadConfig(name)
         if Settings[key]==true and item.Callback then pcall(item.Callback,false) end
         Settings[key]=false; item.Update(false)
     end
-    local order={"AntiFling","AntiAfk","XRay","FullBright","ESP","ESP_Gun","ShowShootFloat","Fly","Noclip","AvoidMurderer","ResetWhenFull","AutoFarm"}
+    local order={"AntiFling","AntiAfk","XRay","FullBright","ESP","ESP_Gun","ShowShootFloat","ShowGrabFloat","AutoGrabGun","Fly","Noclip","AvoidMurderer","ResetWhenFull","AutoFarm"}
     for _,key in ipairs(order) do
         local item=ToggleButtons[key]
         local value=data.Settings[key]
@@ -1986,8 +2039,9 @@ local UnloadPending=false
 local function UnloadHub()
     State.Alive = false
     Settings.AutoFarm=false; Settings.Fly=false; Settings.Noclip=false; Settings.AntiAfk=false
-    if AntiAfkConnection then AntiAfkConnection:Disconnect(); AntiAfkConnection=nil end
     Settings.ESP=false; Settings.ESP_Gun=false; Settings.AntiFling=false
+    Settings.AutoGrabGun=false
+    if AntiAfkConnection then AntiAfkConnection:Disconnect(); AntiAfkConnection=nil end
     StopFly(); StopFarmMovement(); RestoreCollision()
     if AntiFlingConnection then AntiFlingConnection:Disconnect(); AntiFlingConnection=nil end
     EnableESP(false); EnableGunDropESP(false)
