@@ -1,15 +1,16 @@
 --[[
     A TROPA DA HELLO KITTY HUB
-    Versao 1.7.3 - MOBILE + PC
+    Versao 1.7.5 - MOBILE + PC
     by Guilherme_FOX123
 
-    Mudancas da 1.7.2 -> 1.7.3:
-    - Noclip do Farm separado do Noclip manual
-    - Auto Farm ativa noclip proprio automaticamente
-    - Ao desligar o farm, o noclip manual anterior eh restaurado
+    Mudancas da 1.7.4 -> 1.7.5:
+    - Noclip do farm fica ativado enquanto o farm esta ATIVO:
+      procurando, andando, chegando na moeda, esperando coletar.
+    - So desliga quando: farm pausado, morreu, mochila cheia, resetando,
+      ou toggle AutoFarm desligado.
 ]]
 
-local HUB_VERSION = "1.7.3"
+local HUB_VERSION = "1.7.5"
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -1527,9 +1528,13 @@ StartFarmMovement = function()
 
         UpdateBagDisplay()
         if not RoundActive or FarmPaused then
+            NoclipFarm = false
+            if not NoclipManual then RestoreCollision() end
             PauseFarmMovement(); FarmStatus.Text = "Status: aguardando próxima rodada"; return
         end
         if FarmResetUsedThisRound then
+            NoclipFarm = false
+            if not NoclipManual then RestoreCollision() end
             PauseFarmMovement(); FarmStatus.Text = "Status: aguardando próxima rodada"; return
         end
         if IsBagFull() then
@@ -1547,6 +1552,12 @@ StartFarmMovement = function()
             return
         end
         if FarmResetPending or ResettingForFull then PauseFarmMovement(); return end
+
+        -- FARM ATIVO: noclip ligado enquanto procura / anda / chega / espera
+        if not NoclipFarm then
+            NoclipFarm = true
+            ApplyNoclip()
+        end
 
         if waitingForCoin then
             FarmVelocity.VectorVelocity = Vector3.zero
@@ -1623,10 +1634,6 @@ local function SetAutoFarm(enabled)
             return
         end
 
-        -- Ativa noclip do farm (SEM MEXER no noclip manual)
-        NoclipFarm = true
-        ApplyNoclip()
-
         FarmResetPending = FarmResetUsedThisRound
         ResettingForFull = FarmResetUsedThisRound
         FarmTarget = nil; FarmArrivedTarget = nil
@@ -1649,11 +1656,8 @@ local function SetAutoFarm(enabled)
     else
         StopFarmMovement()
 
-        -- Desativa noclip do farm (mas mantém o manual se estiver ligado)
         NoclipFarm = false
-        if not NoclipManual then
-            RestoreCollision()
-        end
+        if not NoclipManual then RestoreCollision() end
 
         FarmResetPending = false; ResettingForFull = false; FarmPaused = false
         FarmStatus.Text = "Status: AutoFarm desligado"
@@ -1682,6 +1686,8 @@ task.spawn(function()
             else
                 RoundActive = false; FarmPaused = true
                 PauseFarmMovement()
+                NoclipFarm = false
+                if not NoclipManual then RestoreCollision() end
                 if not playing then
                     FarmStatus.Text = "Status: aguardando entrar na rodada"
                 else
