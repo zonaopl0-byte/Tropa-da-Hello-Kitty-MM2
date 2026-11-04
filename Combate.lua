@@ -1,6 +1,6 @@
 --[[
     HELLO KITTY HUB - DLC: COMBATE
-    Auto Grab Gun apenas pega. Auto Win atira se for Xerife/Herói.
+    Auto Win teleporta Inocente pro Lobby UMA VEZ SÓ por rodada.
 ]]
 
 local Players = game:GetService("Players")
@@ -115,21 +115,21 @@ local function GetAlivePlayers()
     return alive
 end
 
--- ========== VERIFICA SE ESTÁ NO MAPA ==========
-local function IsInMap()
-    local map = workspace:FindFirstChild("Map") or workspace:FindFirstChild("Map", true)
-    if not map then return false end
-    
+-- ========== DETECÇÃO DE LOBBY ==========
+local function GetLobbyPosition()
+    local lobby = workspace:FindFirstChild("Lobby") or workspace:FindFirstChild("Lobby", true)
+    if not lobby then return nil end
+    local spawns = lobby:FindFirstChild("Spawns", true)
+    local part = spawns and (spawns:IsA("BasePart") and spawns or spawns:FindFirstChildWhichIsA("BasePart", true))
+    local spawn = part or lobby:FindFirstChildWhichIsA("SpawnLocation", true) or lobby:FindFirstChildWhichIsA("BasePart", true)
+    return spawn and spawn.Position or nil
+end
+
+local function IsNearLobby()
+    local lobbyPos = GetLobbyPosition()
     local myRoot = GetRoot(LocalPlayer)
-    if not myRoot then return false end
-    
-    if map:IsA("Model") then
-        local mapPart = map.PrimaryPart or map:FindFirstChildWhichIsA("BasePart", true)
-        if mapPart then
-            return (myRoot.Position - mapPart.Position).Magnitude < 500
-        end
-    end
-    return false
+    if not lobbyPos or not myRoot then return false end
+    return (myRoot.Position - lobbyPos).Magnitude < 100
 end
 
 -- ========== AÇÕES ==========
@@ -181,13 +181,11 @@ local function AutoShootMurderer()
     return ok, dead
 end
 
--- ========== AUTO GRAB GUN (SÓ PEGA, NÃO ATIRA) ==========
+-- ========== AUTO GRAB GUN (SÓ PEGA) ==========
 local function AutoGrabGun()
-    -- Só funciona se for Inocente
     if GetRole(LocalPlayer) ~= "Innocent" then return end
     if IsBusy then return end
     IsBusy = true
-    
     if not GetGun() then
         local drop = workspace:FindFirstChild("GunDrop", true)
         if drop then
@@ -210,7 +208,6 @@ local function AutoGrabGun()
             end
         end
     end
-    
     IsBusy = false
 end
 
@@ -378,19 +375,20 @@ local function ToggleAutoKill(enabled)
     end
 end
 
--- ========== AUTO WIN SIMPLIFICADO ==========
+-- ========== AUTO WIN ==========
 local AutoWinActive = false
+local AlreadyTeleported = false -- FLAG: impede teleporte repetido na mesma rodada
+
 local function ToggleAutoWin(enabled)
     if enabled then
         if AutoWinActive then return end
         AutoWinActive = true
+        AlreadyTeleported = false -- Reseta ao ligar
         
-        -- Desliga loops manuais
         ToggleAutoShot(false)
         ToggleAutoGrab(false)
         ToggleAutoKill(false)
         
-        -- Bloqueia
         if AutoShotToggleObj then AutoShotToggleObj.Lock() end
         if AutoGrabToggleObj then AutoGrabToggleObj.Lock() end
         if AutoKillToggleObj then AutoKillToggleObj.Lock() end
@@ -419,9 +417,10 @@ local function ToggleAutoWin(enabled)
                         if m then AutoShootMurderer() end
                         
                     elseif role == "Innocent" then
-                        -- Inocente: Se estiver no mapa, volta pro Lobby
-                        if IsInMap() then
+                        -- Inocente: Se foi pro mapa e ainda não teleportou nesta rodada
+                        if not IsNearLobby() and not AlreadyTeleported then
                             TeleportToLobby()
+                            AlreadyTeleported = true -- Marca que já teleportou
                         end
                     end
                 end)
@@ -430,6 +429,7 @@ local function ToggleAutoWin(enabled)
         end)
     else
         AutoWinActive = false
+        AlreadyTeleported = false
         if AutoShotToggleObj then AutoShotToggleObj.Unlock() end
         if AutoGrabToggleObj then AutoGrabToggleObj.Unlock() end
         if AutoKillToggleObj then AutoKillToggleObj.Unlock() end
@@ -437,6 +437,20 @@ local function ToggleAutoWin(enabled)
         if KillToggleObj then KillToggleObj.Unlock() end
     end
 end
+
+-- ========== RESET DA FLAG QUANDO A RODADA ACABA ==========
+-- Detecta nova rodada via RoundStart ou mudança de role
+task.spawn(function()
+    while task.wait(1) do
+        if AutoWinActive then
+            local role = GetRole(LocalPlayer)
+            -- Se mudou de role (ex: era Inocente, virou Xerife na próxima rodada), reseta a flag
+            if role ~= "Innocent" then
+                AlreadyTeleported = false
+            end
+        end
+    end
+end)
 
 -- ========== INICIALIZAÇÃO ==========
 FloatToggleObj = AddCustomToggle("🎯 Botão Flutuante (Shot)", false, function(state)
@@ -484,4 +498,4 @@ task.spawn(function()
     end
 end)
 
-print("[HelloKitty DLC] Auto Grab Gun apenas pega. Auto Win atira se for Xerife/Herói.")
+print("[HelloKitty DLC] Auto Win teleporta Inocente UMA VEZ SÓ por rodada.")
