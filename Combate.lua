@@ -1,6 +1,6 @@
 --[[
     HELLO KITTY HUB - DLC: COMBATE
-    Auto Win teleporta Inocente pro Lobby UMA VEZ SÓ por rodada.
+    Auto Win: Todos teleportam pro Lobby ao pisar no mapa.
 ]]
 
 local Players = game:GetService("Players")
@@ -181,7 +181,7 @@ local function AutoShootMurderer()
     return ok, dead
 end
 
--- ========== AUTO GRAB GUN (SÓ PEGA) ==========
+-- ========== AUTO GRAB GUN ==========
 local function AutoGrabGun()
     if GetRole(LocalPlayer) ~= "Innocent" then return end
     if IsBusy then return end
@@ -375,9 +375,9 @@ local function ToggleAutoKill(enabled)
     end
 end
 
--- ========== AUTO WIN ==========
+-- ========== AUTO WIN (TODOS TELEPORTAM) ==========
 local AutoWinActive = false
-local AlreadyTeleported = false -- FLAG: impede teleporte repetido na mesma rodada
+local AlreadyTeleported = false
 
 local function ToggleAutoWin(enabled)
     if enabled then
@@ -398,30 +398,10 @@ local function ToggleAutoWin(enabled)
         task.spawn(function()
             while AutoWinActive do
                 pcall(function()
-                    local role = GetRole(LocalPlayer)
-                    
-                    if role == "Murderer" then
-                        -- Assassino: Mata todos
-                        local knife = GetKnife()
-                        if knife then
-                            for _, t in ipairs(GetAlivePlayers()) do
-                                if not AutoWinActive then break end
-                                StabTarget(t)
-                                task.wait(0.5)
-                            end
-                        end
-                        
-                    elseif role == "Sheriff" or role == "Hero" then
-                        -- Xerife/Herói: Atira no assassino
-                        local m = GetMurderer()
-                        if m then AutoShootMurderer() end
-                        
-                    elseif role == "Innocent" then
-                        -- Inocente: Se foi pro mapa e ainda não teleportou nesta rodada
-                        if not IsNearLobby() and not AlreadyTeleported then
-                            TeleportToLobby()
-                            AlreadyTeleported = true -- Marca que já teleportou
-                        end
+                    -- REGRA GERAL: Qualquer role, se pisar no mapa, vai pro Lobby (1x)
+                    if not IsNearLobby() and not AlreadyTeleported then
+                        TeleportToLobby()
+                        AlreadyTeleported = true
                     end
                 end)
                 task.wait(1)
@@ -439,13 +419,13 @@ local function ToggleAutoWin(enabled)
 end
 
 -- ========== RESET DA FLAG QUANDO A RODADA ACABA ==========
--- Detecta nova rodada via RoundStart ou mudança de role
+-- Detecta quando a rodada acaba (você morre ou volta pro lobby de forma natural)
 task.spawn(function()
-    while task.wait(1) do
+    while task.wait(2) do
         if AutoWinActive then
+            -- Se você morreu (Dead) ou a rodada acabou, reseta a flag
             local role = GetRole(LocalPlayer)
-            -- Se mudou de role (ex: era Inocente, virou Xerife na próxima rodada), reseta a flag
-            if role ~= "Innocent" then
+            if role == "Dead" then
                 AlreadyTeleported = false
             end
         end
@@ -498,4 +478,4 @@ task.spawn(function()
     end
 end)
 
-print("[HelloKitty DLC] Auto Win teleporta Inocente UMA VEZ SÓ por rodada.")
+print("[HelloKitty DLC] Auto Win: TODOS teleportam pro Lobby ao pisar no mapa (1x).")
