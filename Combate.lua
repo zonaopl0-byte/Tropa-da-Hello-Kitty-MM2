@@ -1,7 +1,6 @@
 --[[
     HELLO KITTY HUB - DLC: COMBATE
-    Organizado em colunas: Xerife (Esquerda) e Assassino (Direita).
-    Cores sincronizadas com o tema do Hub.
+    Cores sincronizadas com o tema e Knife Throw corrigido.
 ]]
 
 local Players = game:GetService("Players")
@@ -30,19 +29,28 @@ local function Create(className, properties, parent)
     return obj
 end
 
--- ========== SISTEMA DE CORES DO TEMA ==========
--- Pega a cor de um botão que já existe no hub para sincronizar
-local themeButton = Color3.fromRGB(255,145,190) 
-local themeTrack = Color3.fromRGB(150,85,115)
-local firstBtn = combatPage:FindFirstChildWhichIsA("TextButton")
-if firstBtn then 
-    themeButton = firstBtn.BackgroundColor3 
+-- ========== SISTEMA DE CORES DINÂMICO ==========
+-- Pega as cores do próprio Hub para garantir que fique idêntico
+local themeButton = Color3.fromRGB(255,145,190) -- Fallback
+local themeTrack = Color3.fromRGB(150,85,115)   -- Fallback
+local themeHeader = Color3.fromRGB(255,125,180) -- Fallback
+
+-- Tenta achar um botão existente na página do Hub (ex: um botão de teleporte)
+local sampleBtn = hubGui:FindFirstChild("Main") and hubGui.Main:FindFirstChild("PagesContainer") and hubGui.Main.PagesContainer:FindFirstChild("TELEPORT") and hubGui.Main.PagesContainer.TELEPORT:FindFirstChildWhichIsA("TextButton")
+if sampleBtn then
+    themeButton = sampleBtn.BackgroundColor3
 end
 
--- Tenta achar a cor mais escura (Track) olhando o fundo das abas ou de um frame
-local trackFrame = combatPage:FindFirstChildWhichIsA("Frame")
-if trackFrame and trackFrame.Name ~= "CombatDLC_Layout" then
-    themeTrack = trackFrame.BackgroundColor3
+-- Tenta achar o Header do Hub
+local sampleHeader = hubGui:FindFirstChild("Main") and hubGui.Main:FindFirstChild("Header")
+if sampleHeader then
+    themeHeader = sampleHeader.BackgroundColor3
+end
+
+-- Tenta achar a cor do Track (fundo de sliders/listas)
+local sampleTrack = hubGui:FindFirstChild("Main") and hubGui.Main:FindFirstChild("Sidebar")
+if sampleTrack then
+    themeTrack = sampleTrack.BackgroundColor3
 end
 
 -- ========== CRIAÇÃO DAS DUAS COLUNAS ==========
@@ -265,6 +273,7 @@ local function StabTarget(targetPlayer)
     return false
 end
 
+-- ========== KNIFE THROW (CORRIGIDO) ==========
 local function ThrowKnife(targetPlayer)
     local knife = GetKnife()
     local myRoot = GetRoot(LocalPlayer)
@@ -275,14 +284,31 @@ local function ThrowKnife(targetPlayer)
     local humanoid = LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
     if knife.Parent ~= LocalPlayer.Character and humanoid then
         humanoid:EquipTool(knife)
-        task.wait(0.1)
+        task.wait(0.2) -- Espera a faca carregar
     end
     
     local events = knife:FindFirstChild("Events")
-    if events then
-        events.KnifeThrown:FireServer(myRoot.CFrame, targetRoot.Position)
+    if not events then return false end
+    
+    -- O MM2 espera a posição de origem e a posição do alvo
+    -- Usamos o CFrame da mão/corpo e a posição da cabeça do alvo
+    local targetHead = targetPlayer.Character and targetPlayer.Character:FindFirstChild("Head")
+    local aimPos = targetHead and targetHead.Position or targetRoot.Position
+    
+    -- Dispara o evento de lançar (KnifeThrown ou Throw)
+    local throwEvent = events:FindFirstChild("KnifeThrown") or events:FindFirstChild("Throw")
+    if throwEvent then
+        throwEvent:FireServer(myRoot.CFrame, aimPos)
         return true
     end
+    
+    -- Fallback: alguns servidores esperam apenas a posição do mouse
+    local mouseEvent = events:FindFirstChild("MouseEvent")
+    if mouseEvent then
+        mouseEvent:FireServer(aimPos)
+        return true
+    end
+    
     return false
 end
 
@@ -333,7 +359,7 @@ local function AddCustomToggle(title, initial, callback, parent)
 
     local state = initial
     local function updateVisual(enabled)
-        track.BackgroundColor3 = enabled and Color3.fromRGB(100, 200, 100) or themeTrack
+        track.BackgroundColor3 = enabled and themeHeader or themeTrack
         knob.Position = enabled and UDim2.new(1,-17,0,3) or UDim2.fromOffset(3,3)
     end
 
@@ -355,7 +381,7 @@ local function AddCustomToggle(title, initial, callback, parent)
     }
 end
 
--- ========== BOTÕES FLUTUANTES (COR DO TEMA) ==========
+-- ========== BOTÕES FLUTUANTES ==========
 local FloatingBtnShot = nil
 local FloatingBtnKnife = nil
 
@@ -384,7 +410,7 @@ local function CreateShotButton()
 
     FloatingBtnShot = Create("TextButton", {
         Name = "ShotMurderFloat", Size = UDim2.fromOffset(60, 60), Position = pos,
-        BackgroundColor3 = themeButton, -- Puxa a cor do tema
+        BackgroundColor3 = themeButton, 
         Text = "SHOT\nMURDER",
         TextColor3 = Color3.new(1,1,1), TextSize = 11, Font = Enum.Font.GothamBold, ZIndex = 999
     }, hubGui)
@@ -399,7 +425,7 @@ local function CreateKnifeButton()
 
     FloatingBtnKnife = Create("TextButton", {
         Name = "ThrowKnifeFloat", Size = UDim2.fromOffset(60, 60), Position = knifePos,
-        BackgroundColor3 = themeTrack, -- Puxa a cor mais escura do tema (Track)
+        BackgroundColor3 = themeTrack, 
         Text = "THROW\nKNIFE", 
         TextColor3 = Color3.new(1,1,1), TextSize = 11, Font = Enum.Font.GothamBold, ZIndex = 999
     }, hubGui)
@@ -556,7 +582,7 @@ end, RightCol)
 KillAllBtnObj = Create("TextButton", {
     Name = "CombatDLC_Item",
     Size = UDim2.new(1, 0, 0, 34),
-    BackgroundColor3 = themeButton, -- Puxa a cor do tema
+    BackgroundColor3 = themeButton,
     Text = "🔪 Kill All",
     TextColor3 = Color3.new(1,1,1),
     TextSize = 11,
@@ -569,4 +595,4 @@ AutoKillToggleObj = AddCustomToggle("🤖 Auto Kill All", false, function(state)
     ToggleAutoKill(state)
 end, RightCol)
 
-print("[HelloKitty DLC] Aba Combate carregada com cores do tema!")
+print("[HelloKitty DLC] Aba Combate carregada e cores sincronizadas!")
