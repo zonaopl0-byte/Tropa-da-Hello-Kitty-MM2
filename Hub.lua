@@ -9,4 +9,3 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/zonaopl0-byte/Tropa-d
 
 -- 3) Carrega a DLC de Combate
 -- (A DLC vai procurar a aba Combate que o Hub acabou de criar)
-loadstring(game:HttpGet("https://raw.githubusercontent.com/zonaopl0-byte/Tropa-da-Hello-Kitty-MM2/refs/heads/main/Combate.lua"))()
