@@ -13,6 +13,8 @@
     - (Mantido do 1.7.6) Noclip do farm desliga imediatamente ao morrer
       ou ao encher a mochila.
     - (Mantido do 1.7.6) AutoFarm nao farma em entrada atrasada.
+    
+    [PATCH] Abas TROLL e COMBATE limpas (sem aviso "EM BREVE").
 ]]
 
 local HUB_VERSION = "1.7.7"
@@ -319,52 +321,6 @@ local function AddButton(page,text,callback)
     button.MouseButton1Click:Connect(callback)
     return button
 end
-
--- ========== MENSAGENS "EM BREVE" ==========
-local ComingSoonFrames = {}
-local function CreateComingSoonLabel(page, icon)
-    local frame = Create("Frame", {
-        Name = "ComingSoonFrame",
-        Size = UDim2.new(1,-6,0,120),
-        BackgroundColor3 = Themes[CurrentTheme].Button,
-        BorderSizePixel = 0,
-    }, page)
-    Create("UICorner", { CornerRadius = UDim.new(0, 12) }, frame)
-    table.insert(ComingSoonFrames, frame)
-
-    Create("TextLabel", {
-        Size = UDim2.new(1, 0, 0, 50),
-        Position = UDim2.new(0, 0, 0.3, -25),
-        BackgroundTransparency = 1,
-        Text = icon or "🚧",
-        TextColor3 = Color3.new(1, 1, 1),
-        TextSize = 40,
-        Font = Enum.Font.GothamBold,
-    }, frame)
-
-    Create("TextLabel", {
-        Size = UDim2.new(1, 0, 0, 30),
-        Position = UDim2.new(0, 0, 0.3, 25),
-        BackgroundTransparency = 1,
-        Text = "EM BREVE",
-        TextColor3 = Color3.new(1, 1, 1),
-        TextSize = 20,
-        Font = Enum.Font.GothamBold,
-    }, frame)
-
-    Create("TextLabel", {
-        Size = UDim2.new(1, 0, 0, 20),
-        Position = UDim2.new(0, 0, 0.3, 55),
-        BackgroundTransparency = 1,
-        Text = "Aguarde atualizações",
-        TextColor3 = Color3.fromRGB(255, 235, 245),
-        TextSize = 11,
-        Font = Enum.Font.Gotham,
-    }, frame)
-end
-
-CreateComingSoonLabel(CombatPage, "🎯")
-CreateComingSoonLabel(TrollPage, "😈")
 
 local RefreshRoles, GetRole
 
@@ -1806,7 +1762,7 @@ local function ApplyTheme(name)
 
     for _,page in pairs(Pages) do
         for _,object in ipairs(page:GetDescendants()) do
-            if object.Name == "ToggleHitbox" or object.Name == "ComingSoonFrame" then
+            if object.Name == "ToggleHitbox" then
             elseif object:IsA("TextButton") then
                 if object.BackgroundTransparency < 1 then
                     object.BackgroundColor3 = theme.Button
@@ -1823,12 +1779,6 @@ local function ApplyTheme(name)
                     end
                 end
             end
-        end
-    end
-
-    for _,frame in ipairs(ComingSoonFrames) do
-        if frame and frame.Parent then
-            frame.BackgroundColor3 = theme.Track
         end
     end
 
