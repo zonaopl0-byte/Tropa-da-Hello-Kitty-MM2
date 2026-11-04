@@ -1,16 +1,15 @@
 --[[
     A TROPA DA HELLO KITTY HUB
-    Versao 1.6.5 - MOBILE + PC
+    Versao 1.7.3 - MOBILE + PC
     by Guilherme_FOX123
 
-    Mudancas:
-    - Sidebar virou ScrollingFrame (abas nao saem mais do painel)
-    - Botoes de aba menores (30px) e padding 6px
-    - Emoji da aba FARM: 💰
-    - "Em Breve" nao fica mais rosa ao trocar tema
+    Mudancas da 1.7.2 -> 1.7.3:
+    - Noclip do Farm separado do Noclip manual
+    - Auto Farm ativa noclip proprio automaticamente
+    - Ao desligar o farm, o noclip manual anterior eh restaurado
 ]]
 
-local HUB_VERSION = "1.6.5"
+local HUB_VERSION = "1.7.3"
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -241,7 +240,7 @@ local function MakeDraggable(object,handle)
 end
 MakeDraggable(Main,Header)
 
--- MENU LATERAL (ScrollingFrame para nao estourar)
+-- MENU LATERAL (ScrollingFrame)
 local Sidebar = Create("ScrollingFrame",{
     Name="Sidebar", Size=UDim2.new(0,132,1,-74), Position=UDim2.fromOffset(8,66),
     BackgroundTransparency=1, BorderSizePixel=0, ScrollBarThickness=3,
@@ -657,7 +656,10 @@ local function ApplyMovement()
     end
 end
 
--- NOCLIP
+-- ========== NOCLIP (MANUAL E FARM SEPARADOS) ==========
+local NoclipManual = false
+local NoclipFarm = false
+
 local function RestoreCollision()
     for part,original in pairs(OriginalCollision) do
         if part and part.Parent then part.CanCollide = original end
@@ -665,18 +667,10 @@ local function RestoreCollision()
     table.clear(OriginalCollision)
 end
 
-local function SetNoclip(enabled)
-    Settings.Noclip = enabled
-    if not enabled then RestoreCollision() end
-    SetToggleVisual("Noclip",enabled)
-end
-
-AddToggle(PlayerPage,"Noclip","Noclip",SetNoclip)
-
-RunService.Stepped:Connect(function()
-    if not Settings.Noclip then return end
+local function ApplyNoclip()
     local character = LocalPlayer.Character
     if not character then return end
+    if not (NoclipManual or NoclipFarm) then return end
     for _,part in ipairs(character:GetDescendants()) do
         if part:IsA("BasePart") then
             if OriginalCollision[part] == nil then
@@ -685,6 +679,22 @@ RunService.Stepped:Connect(function()
             part.CanCollide = false
         end
     end
+end
+
+local function SetNoclip(enabled)
+    NoclipManual = enabled
+    Settings.Noclip = enabled
+    if not enabled and not NoclipFarm then
+        RestoreCollision()
+    end
+    SetToggleVisual("Noclip",enabled)
+end
+
+AddToggle(PlayerPage,"Noclip","Noclip",SetNoclip)
+
+RunService.Stepped:Connect(function()
+    if not (NoclipManual or NoclipFarm) then return end
+    ApplyNoclip()
 end)
 
 -- ANTI-FLING
@@ -949,6 +959,40 @@ GetRole = function(player)
     if GetPlayerTool(player,"Knife") then return "Murderer" end
     if GetPlayerTool(player,"Gun") then return "Sheriff" end
     return "Unknown"
+end
+
+-- ========== VERIFICA SE O JOGADOR ESTA NA RODADA COM ROLE VALIDA ==========
+local function IsPlayerInRoundWithRole()
+    local character = LocalPlayer.Character
+    if not character or not character.Parent then return false, "sem personagem" end
+    local humanoid = character:FindFirstChildOfClass("Humanoid")
+    if not humanoid or humanoid.Health <= 0 then return false, "morto" end
+
+    local mapFound = workspace:FindFirstChild("Map")
+        or workspace:FindFirstChild("Map", true)
+        or workspace:FindFirstChild("CoinContainer", true)
+    if not mapFound then return false, "fora da rodada" end
+
+    local role = GetRole(LocalPlayer)
+
+    if role == "Unknown" then
+        local backpack = LocalPlayer:FindFirstChild("Backpack")
+        local c = LocalPlayer.Character
+        local hasKnife = (c and c:FindFirstChild("Knife")) or (backpack and backpack:FindFirstChild("Knife"))
+        local hasGun = (c and c:FindFirstChild("Gun")) or (backpack and backpack:FindFirstChild("Gun"))
+        if hasKnife then role = "Murderer"
+        elseif hasGun then role = "Sheriff" end
+    end
+
+    if role == "Unknown" then
+        role = "Innocent"
+    end
+
+    if role == "Innocent" or role == "Sheriff" or role == "Hero" or role == "Murderer" then
+        return true, role
+    end
+
+    return false, role
 end
 
 -- ESP
@@ -1433,7 +1477,9 @@ end
 
 PauseFarmMovement = function()
     FarmTarget = nil; FarmArrivedTarget = nil
-    if FarmVelocity and FarmVelocity.Parent then FarmVelocity.VectorVelocity = Vector3.zero end
+    if FarmVelocity and FarmVelocity.Parent then
+        FarmVelocity.VectorVelocity = Vector3.zero
+    end
 end
 
 StartFarmMovement = function()
@@ -1441,6 +1487,7 @@ StartFarmMovement = function()
     if not Settings.AutoFarm or not RoundActive or FarmPaused
     or FarmResetUsedThisRound or FarmResetPending or ResettingForFull then return end
     if not IsLocalPlayerPlaying() then return end
+
     local character = LocalPlayer.Character
     local root = character and character:FindFirstChild("HumanoidRootPart")
     if not root then return end
@@ -1456,7 +1503,10 @@ StartFarmMovement = function()
     FarmVelocity.VelocityConstraintMode = Enum.VelocityConstraintMode.Vector
     FarmVelocity.ForceLimitsEnabled = false
     FarmVelocity.VectorVelocity = Vector3.zero
+    FarmVelocity.Enabled = true
     FarmVelocity.Parent = root
+
+    local waitingForCoin = false
 
     FarmConnection = RunService.Heartbeat:Connect(function()
         if not Settings.AutoFarm then StopFarmMovement(); return end
@@ -1466,6 +1516,15 @@ StartFarmMovement = function()
             FarmStatus.Text = "Status: aguardando entrar na rodada"
             return
         end
+
+        local charNow = LocalPlayer.Character
+        local humNow = charNow and charNow:FindFirstChildOfClass("Humanoid")
+        if not humNow or humNow.Health <= 0 then
+            RoundActive = false; FarmPaused = true; PauseFarmMovement()
+            FarmStatus.Text = "Status: voce morreu"
+            return
+        end
+
         UpdateBagDisplay()
         if not RoundActive or FarmPaused then
             PauseFarmMovement(); FarmStatus.Text = "Status: aguardando próxima rodada"; return
@@ -1479,48 +1538,76 @@ StartFarmMovement = function()
                 FarmResetUsedThisRound = true; FarmResetPending = true; ResettingForFull = true
                 LastFarmReset = os.clock()
                 FarmStatus.Text = "Status: resetando mochila..."
-                local humanoid = character:FindFirstChildOfClass("Humanoid")
-                if humanoid then
-                    task.delay(0.5,function()
-                        if humanoid.Parent and RoundActive and FarmResetUsedThisRound then
-                            humanoid.Health = 0
-                        end
-                    end)
-                end
+                task.delay(0.5,function()
+                    if humNow.Parent and RoundActive and FarmResetUsedThisRound then
+                        humNow.Health = 0
+                    end
+                end)
             end
             return
         end
         if FarmResetPending or ResettingForFull then PauseFarmMovement(); return end
-        if not IsTargetValid(FarmTarget) then
-            FarmTarget = nil; FarmArrivedTarget = nil
+
+        if waitingForCoin then
             FarmVelocity.VectorVelocity = Vector3.zero
+            return
         end
-        if not FarmTarget then
+
+        if FarmTarget and not FarmTarget.Parent then
+            FarmTarget = nil
+            FarmArrivedTarget = nil
+            FarmVelocity.Enabled = true
+        end
+
+        if not FarmTarget or not IsTargetValid(FarmTarget) then
             FarmTarget = Settings.AvoidMurderer and GetCoinFarFromMurderer() or GetNearestCoin()
             FarmArrivedTarget = nil
+            FarmVelocity.Enabled = true
         end
+
         if not FarmTarget then
             FarmVelocity.VectorVelocity = Vector3.zero
             FarmStatus.Text = "Status: procurando moedas..."; return
         end
-        if not IsTargetValid(FarmTarget) then
-            FarmTarget = nil; FarmVelocity.VectorVelocity = Vector3.zero
-            FarmStatus.Text = "Status: procurando outra moeda..."; return
-        end
-        if FarmArrivedTarget == FarmTarget then
-            FarmVelocity.VectorVelocity = Vector3.zero
-            FarmStatus.Text = "Status: confirmando coleta..."; return
-        end
+
         local targetPosition = FarmTarget.Position
-        local delta = targetPosition-root.Position
+        local delta = targetPosition - root.Position
         local distance = delta.Magnitude
-        FarmStatus.Text = "Status: coletando moedas..."
-        if distance > 0.05 then
-            FarmVelocity.VectorVelocity = delta.Unit*Settings.FarmSpeed
-        else
-            FarmVelocity.VectorVelocity = Vector3.zero
+        local stopDistance = 0.5
+
+        if distance <= stopDistance then
             FarmArrivedTarget = FarmTarget
+            FarmVelocity.VectorVelocity = Vector3.zero
+            if humNow then humNow:Move(Vector3.zero, true) end
+            FarmStatus.Text = "Status: coletando..."
+
+            if not waitingForCoin then
+                waitingForCoin = true
+                local coinAtStop = FarmTarget
+                task.spawn(function()
+                    task.wait(0.2)
+                    if coinAtStop and coinAtStop.Parent then
+                        FarmTarget = nil
+                        FarmArrivedTarget = nil
+                    else
+                        FarmTarget = nil
+                        FarmArrivedTarget = nil
+                    end
+                    waitingForCoin = false
+                    FarmVelocity.Enabled = true
+                end)
+            end
+            return
         end
+
+        local speed = Settings.FarmSpeed
+        if distance < 3 then
+            speed = math.max(4, math.min(Settings.FarmSpeed, distance * 8))
+        end
+
+        FarmVelocity.Enabled = true
+        FarmVelocity.VectorVelocity = delta.Unit * speed
+        FarmStatus.Text = "Status: coletando moedas..."
     end)
 end
 
@@ -1536,27 +1623,38 @@ local function SetAutoFarm(enabled)
             return
         end
 
-        FarmNoclipBefore = Settings.Noclip
-        Settings.Noclip = true
-        SetToggleVisual("Noclip",true)
+        -- Ativa noclip do farm (SEM MEXER no noclip manual)
+        NoclipFarm = true
+        ApplyNoclip()
+
         FarmResetPending = FarmResetUsedThisRound
         ResettingForFull = FarmResetUsedThisRound
         FarmTarget = nil; FarmArrivedTarget = nil
         table.clear(RoleCache)
         RefreshRoles(true)
-        if IsLocalPlayerPlaying() and not FarmResetUsedThisRound then
+
+        task.wait(1)
+        RefreshRoles(true)
+        task.wait(0.5)
+
+        local inRound, role = IsPlayerInRoundWithRole()
+        if inRound and not FarmResetUsedThisRound then
             RoundActive = true; FarmPaused = false
             StartFarmMovement()
-            FarmStatus.Text = "Status: AutoFarm ativado"
+            FarmStatus.Text = "Status: AutoFarm ativado (" .. tostring(role) .. ")"
         else
             RoundActive = false; FarmPaused = true
-            FarmStatus.Text = "Status: aguardando entrar na rodada"
+            FarmStatus.Text = "Status: aguardando rodada (" .. tostring(role) .. ")"
         end
     else
         StopFarmMovement()
-        Settings.Noclip = FarmNoclipBefore
-        SetToggleVisual("Noclip",FarmNoclipBefore)
-        if not FarmNoclipBefore then RestoreCollision() end
+
+        -- Desativa noclip do farm (mas mantém o manual se estiver ligado)
+        NoclipFarm = false
+        if not NoclipManual then
+            RestoreCollision()
+        end
+
         FarmResetPending = false; ResettingForFull = false; FarmPaused = false
         FarmStatus.Text = "Status: AutoFarm desligado"
     end
@@ -1569,7 +1667,9 @@ task.spawn(function()
         if Settings.AutoFarm then
             RefreshRoles(false)
             local playing = IsLocalPlayerPlaying()
-            if playing then
+            local inRound, role = IsPlayerInRoundWithRole()
+
+            if playing and inRound then
                 if not RoundActive and not FarmResetUsedThisRound then
                     RoundActive = true; FarmPaused = false
                     FarmTarget = nil; FarmResetPending = false; ResettingForFull = false
@@ -1582,7 +1682,11 @@ task.spawn(function()
             else
                 RoundActive = false; FarmPaused = true
                 PauseFarmMovement()
-                FarmStatus.Text = "Status: aguardando entrar na rodada"
+                if not playing then
+                    FarmStatus.Text = "Status: aguardando entrar na rodada"
+                else
+                    FarmStatus.Text = "Status: aguardando rodada (" .. tostring(role) .. ")"
+                end
             end
         end
         task.wait(1)
@@ -1603,13 +1707,17 @@ LocalPlayer.CharacterAdded:Connect(function()
     if Settings.AutoFarm then
         StopFarmMovement()
         RefreshRoles(true)
-        if IsLocalPlayerPlaying() and RoundActive and not FarmPaused
+
+        task.wait(0.5)
+
+        local inRound, role = IsPlayerInRoundWithRole()
+        if inRound and RoundActive and not FarmPaused
         and not FarmResetUsedThisRound and not FarmResetPending then
             ResettingForFull = false
             StartFarmMovement()
-            FarmStatus.Text = "Status: Farm retomado"
+            FarmStatus.Text = "Status: Farm retomado (" .. tostring(role) .. ")"
         else
-            FarmStatus.Text = "Status: aguardando próxima rodada"
+            FarmStatus.Text = "Status: aguardando rodada (" .. tostring(role) .. ")"
         end
     end
     if Settings.ESP then
@@ -1638,7 +1746,6 @@ local function ApplyTheme(name)
     for _,page in pairs(Pages) do
         for _,object in ipairs(page:GetDescendants()) do
             if object.Name == "ToggleHitbox" or object.Name == "ComingSoonFrame" then
-                -- ignora
             elseif object:IsA("TextButton") then
                 if object.BackgroundTransparency < 1 then
                     object.BackgroundColor3 = theme.Button
@@ -1855,6 +1962,7 @@ local function UnloadHub()
     State.Alive = false
     Settings.AutoFarm=false; Settings.Fly=false; Settings.Noclip=false; Settings.AntiAfk=false
     Settings.ESP=false; Settings.ESP_Gun=false; Settings.AntiFling=false
+    NoclipManual = false; NoclipFarm = false
     if AntiAfkConnection then AntiAfkConnection:Disconnect(); AntiAfkConnection=nil end
     StopFly(); StopFarmMovement(); RestoreCollision()
     if AntiFlingConnection then AntiFlingConnection:Disconnect(); AntiFlingConnection=nil end
