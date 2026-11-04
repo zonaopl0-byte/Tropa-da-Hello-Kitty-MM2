@@ -1,6 +1,6 @@
 --[[
     HELLO KITTY HUB - DLC: COMBATE
-    Auto Win: Inocente teleporta pro Lobby se for pro mapa.
+    Auto Grab Gun apenas pega. Auto Win atira se for Xerife/Herói.
 ]]
 
 local Players = game:GetService("Players")
@@ -123,15 +123,12 @@ local function IsInMap()
     local myRoot = GetRoot(LocalPlayer)
     if not myRoot then return false end
     
-    -- Verifica se o jogador está dentro da área do mapa
-    -- (se a pasta Map for um Model, checa se está perto dela)
     if map:IsA("Model") then
         local mapPart = map.PrimaryPart or map:FindFirstChildWhichIsA("BasePart", true)
         if mapPart then
             return (myRoot.Position - mapPart.Position).Magnitude < 500
         end
     end
-    
     return false
 end
 
@@ -184,8 +181,9 @@ local function AutoShootMurderer()
     return ok, dead
 end
 
--- ========== AUTO GRAB GUN (SÓ INOCENTE) ==========
+-- ========== AUTO GRAB GUN (SÓ PEGA, NÃO ATIRA) ==========
 local function AutoGrabGun()
+    -- Só funciona se for Inocente
     if GetRole(LocalPlayer) ~= "Innocent" then return end
     if IsBusy then return end
     IsBusy = true
@@ -304,7 +302,7 @@ local function CreateKillButton()
     table.insert(AllUIElements, {Type = "FloatKill", Obj = FloatingBtnKill})
 end
 
--- ========== LOOPS ==========
+-- ========== LOOPS MANUAIS ==========
 local AutoShotActive = false
 local FloatToggleObj, AutoShotToggleObj, AutoGrabToggleObj, KillToggleObj, AutoKillToggleObj, AutoWinToggleObj
 
@@ -380,15 +378,19 @@ local function ToggleAutoKill(enabled)
     end
 end
 
--- ========== AUTO WIN ==========
+-- ========== AUTO WIN SIMPLIFICADO ==========
 local AutoWinActive = false
 local function ToggleAutoWin(enabled)
     if enabled then
         if AutoWinActive then return end
         AutoWinActive = true
         
-        ToggleAutoShot(false); ToggleAutoGrab(false); ToggleAutoKill(false)
+        -- Desliga loops manuais
+        ToggleAutoShot(false)
+        ToggleAutoGrab(false)
+        ToggleAutoKill(false)
         
+        -- Bloqueia
         if AutoShotToggleObj then AutoShotToggleObj.Lock() end
         if AutoGrabToggleObj then AutoGrabToggleObj.Lock() end
         if AutoKillToggleObj then AutoKillToggleObj.Lock() end
@@ -401,7 +403,7 @@ local function ToggleAutoWin(enabled)
                     local role = GetRole(LocalPlayer)
                     
                     if role == "Murderer" then
-                        -- Assassino: Mata
+                        -- Assassino: Mata todos
                         local knife = GetKnife()
                         if knife then
                             for _, t in ipairs(GetAlivePlayers()) do
@@ -412,19 +414,14 @@ local function ToggleAutoWin(enabled)
                         end
                         
                     elseif role == "Sheriff" or role == "Hero" then
-                        -- Xerife/Herói: Atira
+                        -- Xerife/Herói: Atira no assassino
                         local m = GetMurderer()
                         if m then AutoShootMurderer() end
                         
                     elseif role == "Innocent" then
-                        -- Inocente: Se foi pro mapa, volta pro Lobby
+                        -- Inocente: Se estiver no mapa, volta pro Lobby
                         if IsInMap() then
                             TeleportToLobby()
-                        else
-                            -- Se já está no lobby e não tem arma, tenta pegar se cair
-                            if not GetGun() then
-                                AutoGrabGun()
-                            end
                         end
                     end
                 end)
@@ -487,4 +484,4 @@ task.spawn(function()
     end
 end)
 
-print("[HelloKitty DLC] Aba Combate com Auto Win: Inocente foge pro Lobby se for pro mapa!")
+print("[HelloKitty DLC] Auto Grab Gun apenas pega. Auto Win atira se for Xerife/Herói.")
