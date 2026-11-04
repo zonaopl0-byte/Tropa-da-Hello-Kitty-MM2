@@ -1,6 +1,6 @@
 --[[
     HELLO KITTY HUB - DLC: COMBATE
-    Auto Win: Assassino mata, Xerife/Herói atira, Inocente vai pro Lobby.
+    Auto Win: Teleporta pro Lobby primeiro, depois age conforme a role.
 ]]
 
 local Players = game:GetService("Players")
@@ -181,33 +181,32 @@ local function AutoShootMurderer()
     return ok, dead
 end
 
--- ========== AUTO GRAB GUN (SÓ PEGA) ==========
+-- ========== AUTO GRAB GUN (SÓ PEGA E VOLTA PRO LOBBY) ==========
 local function AutoGrabGun()
-    if GetRole(LocalPlayer) ~= "Innocent" then return end
     if IsBusy then return end
     IsBusy = true
-    if not GetGun() then
-        local drop = workspace:FindFirstChild("GunDrop", true)
-        if drop then
-            local part = drop:IsA("BasePart") and drop or drop:FindFirstChildWhichIsA("BasePart", true)
-            if part then
-                local myRoot = GetRoot(LocalPlayer)
-                if myRoot then
-                    local home = myRoot.CFrame
-                    myRoot.CFrame = part.CFrame
-                    myRoot.AssemblyLinearVelocity = Vector3.zero
-                    task.wait(0.2)
-                    pcall(function()
-                        firetouchinterest(myRoot, part, 0)
-                        firetouchinterest(myRoot, part, 1)
-                    end)
-                    task.wait(0.3)
-                    myRoot.CFrame = home
-                    myRoot.AssemblyLinearVelocity = Vector3.zero
-                end
+    
+    local drop = workspace:FindFirstChild("GunDrop", true)
+    if drop then
+        local part = drop:IsA("BasePart") and drop or drop:FindFirstChildWhichIsA("BasePart", true)
+        if part then
+            local myRoot = GetRoot(LocalPlayer)
+            if myRoot then
+                -- Vai para a arma
+                myRoot.CFrame = part.CFrame
+                myRoot.AssemblyLinearVelocity = Vector3.zero
+                task.wait(0.2)
+                pcall(function()
+                    firetouchinterest(myRoot, part, 0)
+                    firetouchinterest(myRoot, part, 1)
+                end)
+                task.wait(0.3)
+                -- Volta pro Lobby
+                TeleportToLobby()
             end
         end
     end
+    
     IsBusy = false
 end
 
@@ -375,7 +374,7 @@ local function ToggleAutoKill(enabled)
     end
 end
 
--- ========== AUTO WIN (CORRIGIDO: ATIRA SE FOR HERÓI/XERIFE) ==========
+-- ========== AUTO WIN (LÓGICA DUPLA: LOBBY + AÇÃO) ==========
 local AutoWinActive = false
 local AlreadyTeleported = false
 
@@ -383,7 +382,7 @@ local function ToggleAutoWin(enabled)
     if enabled then
         if AutoWinActive then return end
         AutoWinActive = true
-        AlreadyTeleported = false -- Reseta ao ligar
+        AlreadyTeleported = false
         
         ToggleAutoShot(false)
         ToggleAutoGrab(false)
@@ -400,18 +399,44 @@ local function ToggleAutoWin(enabled)
                 pcall(function()
                     local role = GetRole(LocalPlayer)
                     
-                    if role == "Sheriff" or role == "Hero" then
-                        -- Xerife/Herói: Atira no assassino (NÃO teleporta)
-                        local m = GetMurderer()
-                        if m then
-                            AutoShootMurderer()
+                    -- FASE 1: Teleporta pro Lobby (todos)
+                    if not IsNearLobby() and not AlreadyTeleported then
+                        TeleportToLobby()
+                        AlreadyTeleported = true
+                    end
+                    
+                    -- FASE 2: Ações conforme a role
+                    if role == "Murderer" then
+                        -- Assassino: Se tiver faca, mata todos
+                        local knife = GetKnife()
+                        if knife then
+                            for _, t in ipairs(GetAlivePlayers()) do
+                                if not AutoWinActive then break end
+                                StabTarget(t)
+                                task.wait(0.5)
+                            end
                         end
                         
-                    else
-                        -- Assassino ou Inocente: Teleporta pro Lobby (1x)
-                        if not IsNearLobby() and not AlreadyTeleported then
-                            TeleportToLobby()
-                            AlreadyTeleported = true
+                    elseif role == "Sheriff" or role == "Hero" then
+                        -- Xerife/Herói: Se tiver arma, atira no assassino
+                        if GetGun() then
+                            local m = GetMurderer()
+                            if m then AutoShootMurderer() end
+                        end
+                        
+                    elseif role == "Innocent" then
+                        -- Inocente: Se a arma cair, pega e atira no assassino
+                        if not GetGun() then
+                            local drop = workspace:FindFirstChild("GunDrop", true)
+                            if drop then
+                                AutoGrabGun()
+                            end
+                        end
+                        
+                        -- Se já tem arma (pegou do drop), atira no assassino
+                        if GetGun() then
+                            local m = GetMurderer()
+                            if m then AutoShootMurderer() end
                         end
                     end
                 end)
@@ -487,4 +512,4 @@ task.spawn(function()
     end
 end)
 
-print("[HelloKitty DLC] Auto Win: Xerife/Herói atira, Assassino e Inocente vão pro Lobby.")
+print("[HelloKitty DLC] Auto Win: Lobby primeiro, depois age conforme a role.")
